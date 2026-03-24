@@ -1,0 +1,33 @@
+<idea-plugin>
+    <id>ru.sbrf.uddk.ai.testing.lsprag</id>
+    <name>LSPRAG API Test Generator</name>
+    <version>1.0.0</version>
+    <vendor email="lucifer.and.diablo@gmail.com" url="">Diablo Team</vendor>
+
+    <description><![CDATA[
+        Плагин для автоматической генерации тест-кейсов и тестов REST API Spring Boot с использованием LLM + контекстного анализа кода.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.java</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationConfigurable
+                parentId="tools"
+                instance="ru.sbrf.uddk.ai.testing.lsprag.SettingsConfigurable"
+                id="ru.sbrf.uddk.ai.testing.lsprag.settings"
+                displayName="LSPRAG"/>
+        <applicationService
+                serviceImplementation="ru.sbrf.uddk.ai.testing.lsprag.LspragSettingsState"/>
+    </extensions>
+
+    <actions>
+        <action id="Lsprag.GenerateApiTests"
+                class="ru.sbrf.uddk.ai.testing.lsprag.GenerateApiTestsAction"
+                text="Создать API Тесты"
+                description="Генерация RestAssured тестов и тест-кейса для выбранного REST Endpoint">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt G"/>
+        </action>
+    </actions>
+</idea-plugin>
