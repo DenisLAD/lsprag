@@ -127,6 +127,10 @@ public class MethodContext {
             this.jsonExample = jsonExample;
         }
 
+        public String getName() {
+            return className;
+        }
+
         public String getClassName() {
             return className;
         }

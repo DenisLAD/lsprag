@@ -15,8 +15,10 @@ import ru.sbrf.uddk.ai.testing.lsprag.context.MethodContext;
 import ru.sbrf.uddk.ai.testing.lsprag.utils.PsiUtils;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -25,6 +27,7 @@ public class DTOContextExtractor {
 
     private final DTOAnalyzer dtoAnalyzer;
     private final Set<String> processedTypes = new HashSet<>();
+    private final Map<String, MethodContext.DTOInfo> uniqueDTOs = new HashMap<>(); // Хранилище уникальных DTO
 
     // Типы коллекций для разворачивания
     private static final Set<String> COLLECTION_TYPES = Set.of(
@@ -69,7 +72,7 @@ public class DTOContextExtractor {
     }
 
     /**
-     * Извлекает все DTO из метода
+     * Извлекает все DTO из метода (уникальные)
      */
     @NotNull
     public DTOExtractionResult extractDTOs(@NotNull PsiMethod method) {
@@ -78,18 +81,71 @@ public class DTOContextExtractor {
             List<MethodContext.DTOInfo> responseDTOs = new ArrayList<>();
 
             processedTypes.clear();
+            uniqueDTOs.clear();
 
             // 1. DTO из параметров метода
             extractFromParameters(method, requestDTOs);
 
-            // 2. DTO из возвращаемого типа (исправленная версия)
+            // 2. DTO из возвращаемого типа
             extractFromReturnType(method, responseDTOs);
 
             // 3. DTO из вызываемых методов
             extractFromCalledMethods(method, requestDTOs, responseDTOs);
 
+            // 4. Добавляем все вложенные DTO к каждому найденному DTO
+            enrichWithNestedDTOs(requestDTOs);
+            enrichWithNestedDTOs(responseDTOs);
+
             return new DTOExtractionResult(requestDTOs, responseDTOs);
         });
+    }
+
+    /**
+     * Обогащает список DTO всеми вложенными DTO (уникальные)
+     */
+    private void enrichWithNestedDTOs(@NotNull List<MethodContext.DTOInfo> dtos) {
+        List<MethodContext.DTOInfo> allDTOs = new ArrayList<>(dtos);
+
+        // Собираем все вложенные DTO
+        for (MethodContext.DTOInfo dto : dtos) {
+            collectNestedDTOsRecursively(dto, allDTOs);
+        }
+
+        // Очищаем список и добавляем уникальные DTO
+        dtos.clear();
+
+        // Добавляем уникальные DTO (сохраняя порядок первого появления)
+        Set<String> addedNames = new HashSet<>();
+        for (MethodContext.DTOInfo dto : allDTOs) {
+            if (addedNames.add(dto.getName())) {
+                dtos.add(dto);
+            }
+        }
+    }
+
+    /**
+     * Рекурсивно собирает все вложенные DTO
+     */
+    private void collectNestedDTOsRecursively(@NotNull MethodContext.DTOInfo dto,
+                                              @NotNull List<MethodContext.DTOInfo> collector) {
+        // Проверяем поля на наличие вложенных DTO
+        for (MethodContext.DTOInfo.FieldInfo field : dto.getFields()) {
+            // Поиск вложенного DTO по имени поля, если имя соответствует имени DTO
+            // Или можно хранить ссылку на вложенный DTO напрямую, но для этого нужно расширить FieldInfo
+
+            // Альтернативный подход: ищем среди уже проанализированных DTO
+            String possibleNestedName = field.getTypeName();
+
+            // Проверяем, есть ли DTO с таким именем в хранилище уникальных DTO
+            if (uniqueDTOs.containsKey(possibleNestedName)) {
+                MethodContext.DTOInfo nestedDTO = uniqueDTOs.get(possibleNestedName);
+                if (!collector.contains(nestedDTO)) {
+                    collector.add(nestedDTO);
+                    // Рекурсивно обрабатываем вложенный DTO
+                    collectNestedDTOsRecursively(nestedDTO, collector);
+                }
+            }
+        }
     }
 
     /**
@@ -133,8 +189,7 @@ public class DTOContextExtractor {
     }
 
     /**
-     * Извлечение DTO из возвращаемого типа (ИСПРАВЛЕННАЯ ВЕРСИЯ)
-     * Учитывает: прямой DTO, коллекции, Optional, ResponseEntity и комбинации
+     * Извлечение DTO из возвращаемого типа
      */
     private void extractFromReturnType(@NotNull PsiMethod method,
                                        @NotNull List<MethodContext.DTOInfo> responseDTOs) {
@@ -157,13 +212,6 @@ public class DTOContextExtractor {
 
     /**
      * Рекурсивно разворачивает обёртки и коллекции до базового типа
-     * Примеры:
-     * - UserResponse → [UserResponse]
-     * - List<UserResponse> → [UserResponse]
-     * - ResponseEntity<UserResponse> → [UserResponse]
-     * - ResponseEntity<List<UserResponse>> → [UserResponse]
-     * - Optional<UserResponse> → [UserResponse]
-     * - Mono<List<UserResponse>> → [UserResponse]
      */
     @NotNull
     private List<PsiType> unwrapType(@Nullable PsiType type) {
@@ -193,7 +241,7 @@ public class DTOContextExtractor {
                 return result;
             }
 
-            // 2. Проверяем, является ли тип обёрткой (Optional, ResponseEntity, Mono, Flux)
+            // 2. Проверяем, является ли тип обёрткой
             if (isWrapperType(type)) {
                 PsiType[] typeParams = getTypeParameters(type);
                 if (typeParams.length > 0) {
@@ -253,7 +301,6 @@ public class DTOContextExtractor {
 
     /**
      * Извлекает параметры обобщённого типа
-     * Например: List<UserResponse> → [UserResponse]
      */
     @NotNull
     private PsiType[] getTypeParameters(@NotNull PsiType type) {
@@ -284,7 +331,7 @@ public class DTOContextExtractor {
     }
 
     /**
-     * Анализирует тип и добавляет DTO в список
+     * Анализирует тип и добавляет DTO в список (с учётом уникальности)
      */
     private void analyzeAndAddDTO(@NotNull PsiType type,
                                   @NotNull List<MethodContext.DTOInfo> dtos,
@@ -311,14 +358,79 @@ public class DTOContextExtractor {
         String jsonExample = dtoAnalyzer.generateJsonExample(dtoInfo, 3);
 
         // Конвертируем в MethodContext.DTOInfo
-        extractDto(dtos, dtoInfo, jsonExample);
+        MethodContext.DTOInfo contextDTO = convertToContextDTO(dtoInfo, jsonExample);
+
+        // Сохраняем в уникальное хранилище
+        if (!uniqueDTOs.containsKey(contextDTO.getName())) {
+            uniqueDTOs.put(contextDTO.getName(), contextDTO);
+        }
+
+        // Добавляем в результирующий список (если ещё не добавлен)
+        if (!containsDTO(dtos, contextDTO.getName())) {
+            dtos.add(contextDTO);
+        }
+
+        // Добавляем все вложенные DTO из анализатора
+        addNestedDTOsFromAnalyzer(dtoInfo, dtos);
     }
 
-    private static void extractDto(@NotNull List<MethodContext.DTOInfo> dtos, DTOAnalyzer.DTOInfo dtoInfo, String jsonExample) {
-        if (SKIP_CLASSES.contains(dtoInfo.getName().toLowerCase())) {
-            return;
+    /**
+     * Добавляет все вложенные DTO из DTOAnalyzer
+     */
+    private void addNestedDTOsFromAnalyzer(@NotNull DTOAnalyzer.DTOInfo dtoInfo,
+                                           @NotNull List<MethodContext.DTOInfo> dtos) {
+        // Получаем все вложенные DTO из анализатора
+        List<DTOAnalyzer.DTOInfo> nestedDTOs = dtoInfo.getAllNestedDTOs();
+
+        for (DTOAnalyzer.DTOInfo nestedDTO : nestedDTOs) {
+            // Пропускаем, если это примитив или JDK класс
+            if (SKIP_CLASSES.contains(nestedDTO.getName().toLowerCase())) {
+                continue;
+            }
+
+            // Генерируем JSON пример для вложенного DTO
+            String jsonExample = dtoAnalyzer.generateJsonExample(nestedDTO, 3);
+
+            // Конвертируем в MethodContext.DTOInfo
+            MethodContext.DTOInfo contextDTO = convertToContextDTO(nestedDTO, jsonExample);
+
+            // Сохраняем в уникальное хранилище
+            if (!uniqueDTOs.containsKey(contextDTO.getName())) {
+                uniqueDTOs.put(contextDTO.getName(), contextDTO);
+            }
+
+            // Добавляем в результирующий список, если ещё не добавлен
+            if (!containsDTO(dtos, contextDTO.getName())) {
+                dtos.add(contextDTO);
+            }
         }
-        MethodContext.DTOInfo contextDTO = new MethodContext.DTOInfo(
+    }
+
+    /**
+     * Проверяет, содержит ли список DTO с указанным именем
+     */
+    private boolean containsDTO(@NotNull List<MethodContext.DTOInfo> dtos, @NotNull String name) {
+        return dtos.stream().anyMatch(dto -> dto.getName().equals(name));
+    }
+
+    /**
+     * Конвертирует DTOAnalyzer.DTOInfo в MethodContext.DTOInfo
+     */
+    @NotNull
+    private MethodContext.DTOInfo convertToContextDTO(@NotNull DTOAnalyzer.DTOInfo dtoInfo,
+                                                      @NotNull String jsonExample) {
+        // Проверяем, нужно ли пропустить этот класс
+        if (SKIP_CLASSES.contains(dtoInfo.getName().toLowerCase())) {
+            // Возвращаем пустой DTOInfo, который будет проигнорирован
+            return new MethodContext.DTOInfo(
+                    dtoInfo.getName(),
+                    dtoInfo.getCategory(),
+                    new ArrayList<>(),
+                    jsonExample
+            );
+        }
+
+        return new MethodContext.DTOInfo(
                 dtoInfo.getName(),
                 dtoInfo.getCategory(),
                 dtoInfo.getFields().stream()
@@ -331,9 +443,6 @@ public class DTOContextExtractor {
                         .collect(Collectors.toList()),
                 jsonExample
         );
-
-        dtos.add(contextDTO);
-
     }
 
     /**
@@ -382,6 +491,28 @@ public class DTOContextExtractor {
 
         public List<MethodContext.DTOInfo> getResponseDTOs() {
             return responseDTOs;
+        }
+
+        /**
+         * Получить все уникальные DTO (объединение request и response)
+         */
+        public List<MethodContext.DTOInfo> getAllUniqueDTOs() {
+            Set<String> names = new HashSet<>();
+            List<MethodContext.DTOInfo> all = new ArrayList<>();
+
+            for (MethodContext.DTOInfo dto : requestDTOs) {
+                if (names.add(dto.getName())) {
+                    all.add(dto);
+                }
+            }
+
+            for (MethodContext.DTOInfo dto : responseDTOs) {
+                if (names.add(dto.getName())) {
+                    all.add(dto);
+                }
+            }
+
+            return all;
         }
     }
 }

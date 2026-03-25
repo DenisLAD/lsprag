@@ -44,7 +44,7 @@ public class ImplementationContext {
             this.beanName = beanName;
             this.priority = priority;
             this.bodySnippet = implementingMethod.getBody() != null
-                    ? truncateCode(implementingMethod.getBody().getText(), 1500)
+                    ? truncateCode(implementingMethod.getBody().getText(), 2500)
                     : "// No implementation (abstract or native)";
         }
 

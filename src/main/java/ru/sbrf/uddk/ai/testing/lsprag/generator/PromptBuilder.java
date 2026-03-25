@@ -1,3 +1,4 @@
+
 package ru.sbrf.uddk.ai.testing.lsprag.generator;
 
 import com.intellij.openapi.application.ReadAction;
@@ -7,73 +8,186 @@ import ru.sbrf.uddk.ai.testing.lsprag.LspragSettingsState;
 import ru.sbrf.uddk.ai.testing.lsprag.context.MethodContext;
 import ru.sbrf.uddk.ai.testing.lsprag.model.TestCase;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 public class PromptBuilder {
 
     private static final String SYSTEM_PROMPT = """
-            Ты — опытный QA/AQA, специализирующийся на тестировании Spring Boot приложений.
-            Твоя задача: генерировать качественные интеграционные тесты кейсы для REST API.
-            
-            ### Требования:
-            - Для каждого тест-кейса создать отдельное описание с понятным именем
-            - Проверять статус-код и при необходимости тело ответа
-            - Тест должен быть готов к проверке без дополнительных правок
-            - Если используются DTO то необходимо сгенерировать тестовые данные для теста в формате JSON (**ЭТО ОЧЕНЬ ВАЖНО**)
-            
-            Формат ответа: ТОЛЬКО тест-кейс, с пред условиями и пост условиями, и его описание.
-            **Обязательно:** включай структуру запроса и ответа в JSON.
-            
-            ### Пример тест-кейса:
-            
-            Название: Создание документа через API.
-            Предусловия: Создан пользователь (POST /users, id=123).
-            
-            Шаги:
-            1. POST /createDocument c телом
-            ```json
-            {...}
-            ```
-            2. Проверить: code 201, id != null. И проверить тело ответа
-            ```json
-            {...}
-            ```
-            3. GET /getDocument/{id}
-            4. Проверить: status = "ACTIVE". И проверить тело ответа
-            ```json
-            {...}
-            ```
-            
-            Ожидаемый результат: Все проверки пройдены.
-            
-            Постусловия: DELETE /deleteDocument/{id}.
-            
+            Ты — опытный QA инженер, специализирующийся на тестировании REST API в Spring Boot приложениях.
+                        
+            ### Твоя задача:
+            Создать детальные тест-кейсы для интеграционного тестирования REST эндпоинтов.
+                        
+            ### Требования к тест-кейсам:
+            1. Каждый тест-кейс должен содержать:
+               - Уникальное название (формат: [HTTP_METHOD] Название_сущности - Сценарий)
+               - Предусловия (необходимые данные и состояние системы)
+               - Шаги с конкретными HTTP запросами и ожидаемыми ответами
+               - Ожидаемый результат (все проверки должны быть явно перечислены)
+               - Постусловия (очистка тестовых данных)
+                        
+            2. Для каждого запроса обязательно указывать:
+               - HTTP метод и URL
+               - Тело запроса в JSON формате (если применимо)
+               - Заголовки (Content-Type, Authorization и т.д.)
+                        
+            3. Для каждого ответа проверять:
+               - HTTP статус код
+               - Структуру тела ответа в JSON
+               - Ключевые поля и их значения
+                        
+            4. Генерировать реалистичные тестовые данные:
+               - Использовать осмысленные значения (не "test", "123")
+               - Для дат использовать формат ISO 8601
+               - Для ID использовать UUID или числовые значения
+               - Учитывать бизнес-логику (например, email должен быть валидным)
+                        
+            ### Формат ответа:
+            Предоставь тест-кейс в структурированном виде с использованием markdown.
+            Не добавляй пояснений вне структуры тест-кейса.
+                        
+            ### Пример качественного тест-кейса:
+                        
+            **Название:** [POST] Создание пользователя - Успешное создание с валидными данными
+                        
+            **Предусловия:**
+            - База данных очищена от тестовых данных
+            - Сервис аутентификации доступен
+                        
+            **Шаги:**
+            1. Отправить POST запрос на `/api/users`
+               ```json
+               {
+                 "email": "john.doe@example.com",
+                 "firstName": "John",
+                 "lastName": "Doe",
+                 "age": 30,
+                 "role": "USER"
+               }
+               ```
+                        
+            2. Проверить ответ:
+               - HTTP статус: 201 Created
+               - Заголовок Location: `/api/users/{id}`
+               - Тело ответа:
+               ```json
+               {
+                 "id": "[не пустое значение]",
+                 "email": "john.doe@example.com",
+                 "firstName": "John",
+                 "lastName": "Doe",
+                 "age": 30,
+                 "status": "ACTIVE",
+                 "createdAt": "[валидная дата]"
+               }
+               ```
+                        
+            3. Выполнить GET запрос на `/api/users/{id}` из заголовка Location
+                        
+            4. Проверить, что данные соответствуют созданным
+                        
+            **Ожидаемый результат:**
+            - Пользователь успешно создан
+            - Все поля сохранены корректно
+            - Пользователь имеет статус ACTIVE
+                        
+            **Постусловия:**
+            - Удалить созданного пользователя: DELETE `/api/users/{id}`
+            - Очистить кэш аутентификации
+                        
             """;
 
     private static final String SYSTEM_CODE = """
-            Ты — опытный Java-разработчик, специализирующийся на тестировании Spring Boot приложений.
-            Твоя задача: генерировать качественные интеграционные тесты для REST API.
-            
-            Требования к коду:
-            - Использовать Java 17, JUnit 5, RestAssured
-            - Класс должен быть аннотирован @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-            - Использовать @AutoConfigureMockMvc если требуется
-            - Для каждого тест-кейса создать отдельный @Test метод с понятным именем
-            - Использовать стиль given()-when()-then() из RestAssured
-            - Проверять статус-код и при необходимости тело ответа
-            - Импортировать все необходимые классы, включая статические методы:
-              * import static io.restassured.RestAssured.given;
-              * import static org.hamcrest.Matchers.*;
-              * import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-            - Использовать @Autowired MockMvc или TestRestTemplate по необходимости
-            - Для моков сервисов использовать @MockBean из spring-boot-test
-            - Код должен быть готов к запуску без дополнительных правок
-            
-            Формат ответа: ТОЛЬКО код теста, без пояснений, без markdown-блоков.
+            Ты — опытный Java разработчик, специализирующийся на написании интеграционных тестов для Spring Boot приложений.
+                        
+            ### Стек технологий:
+            - Java 17
+            - Spring Boot 2.x/3.x
+            - JUnit 5 (Jupiter)
+            - RestAssured 5.x
+            - AssertJ для fluent assertions
+                        
+            ### Структура тестового класса:
+            ```java
+            @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+            @AutoConfigureMockMvc
+            @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+            class ResourceNameTest {
+                
+                @LocalServerPort
+                private int port;
+                
+                @Autowired
+                private TestRestTemplate restTemplate;
+                
+                @MockBean
+                private ExternalService externalService;
+                
+                @BeforeEach
+                void setUp() {
+                    // подготовка тестовых данных
+                }
+                
+                @Test
+                @Order(1)
+                @DisplayName("POST /api/resource - Should create resource successfully")
+                void createResource_ShouldReturnCreated() {
+                    // given
+                    CreateRequest request = CreateRequest.builder()
+                        .field1("value1")
+                        .field2(123)
+                        .build();
+                    
+                    // when
+                    Response response = given()
+                        .contentType(ContentType.JSON)
+                        .body(request)
+                        .when()
+                        .post("/api/resource");
+                    
+                    // then
+                    response.then()
+                        .statusCode(HttpStatus.CREATED.value())
+                        .body("id", notNullValue())
+                        .body("field1", equalTo("value1"));
+                }
+            }
+            ```
+                        
+            ### Требования к коду:
+            1. **Импорты:** Все необходимые импорты должны быть включены, включая статические:
+               - `import static io.restassured.RestAssured.given;`
+               - `import static org.assertj.core.api.Assertions.assertThat;`
+               - `import static org.hamcrest.Matchers.*;`
+               - `import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;`
+                        
+            2. **Аннотации:**
+               - Использовать `@SpringBootTest` с `webEnvironment = RANDOM_PORT`
+               - Добавить `@AutoConfigureMockMvc` для тестирования контроллеров
+               - Использовать `@MockBean` для мокирования внешних зависимостей
+               - Добавить `@TestPropertySource` при необходимости переопределения свойств
+                        
+            3. **Методы тестов:**
+               - Каждый тест должен быть изолирован и независим
+               - Использовать понятные имена в формате `methodName_Scenario_ExpectedResult`
+               - Добавлять `@DisplayName` с описанием на русском или английском
+               - Использовать `@Order` для управления порядком выполнения при необходимости
+                        
+            4. **Валидация ответов:**
+               - Проверять статус код с использованием `HttpStatus` enum
+               - Использовать JSONPath для проверки полей
+               - Для сложных проверок применять `assertThat()` из AssertJ
+                        
+            5. **Работа с данными:**
+               - Генерировать тестовые данные через билдеры или фабричные методы
+               - Очищать тестовые данные в `@AfterEach` или использовать `@Transactional`
+               - Для UUID использовать `UUID.randomUUID().toString()`
+                        
+            ### Формат ответа:
+            Верни только Java код тестового класса, без markdown-обертки (без ```java), без пояснений.
+            Код должен быть готов к компиляции и запуску.
             """;
 
     @NotNull
@@ -87,42 +201,67 @@ public class PromptBuilder {
         prompt.append(SYSTEM_PROMPT).append("\n\n");
 
         // 2. Информация о целевом методе
-        prompt.append("### ЦЕЛЕВОЙ МЕТОД\n");
+        prompt.append("## ИСХОДНЫЙ КОД МЕТОДА\n");
         prompt.append(formatMethodInfo(context.getTargetMethod())).append("\n\n");
 
         // 3. Контекст вызываемых методов
         if (!context.getCalledMethods().isEmpty()) {
-            prompt.append("### ВЫЗЫВАЕМЫЕ МЕТОДЫ (контекст)\n");
+            prompt.append("## ЗАВИСИМОСТИ МЕТОДА\n");
+            prompt.append("Метод использует следующие зависимости:\n");
             for (MethodContext.MethodInfo info : context.getCalledMethods().values()) {
                 prompt.append(formatCalledMethod(info)).append("\n");
             }
             prompt.append("\n");
         }
 
-        // 4. DTO и модели данных (если есть в контексте)
-        prompt.append("### МОДЕЛИ ДАННЫХ\n");
+        // 4. DTO и модели данных
+        prompt.append("## МОДЕЛИ ДАННЫХ\n");
         prompt.append(formatDTOs(context)).append("\n\n");
 
-
-        // 5. Список тест-кейсов
-        prompt.append("### ТЕСТ-КЕЙСЫ ДЛЯ ГЕНЕРАЦИИ\n");
+        // 5. Список тест-кейсов для генерации
+        prompt.append("## ТЕСТ-КЕЙСЫ\n");
+        prompt.append("Создай тест-кейсы для следующих сценариев:\n\n");
         for (TestCase tc : testCases) {
             prompt.append(formatTestCase(tc)).append("\n");
         }
         prompt.append("\n");
 
-        // 6. Дополнительные инструкции
-        prompt.append("### ДОПОЛНИТЕЛЬНЫЕ ТРЕБОВАНИЯ\n");
+        // 6. Дополнительные инструкции на основе настроек
+        prompt.append("## ДОПОЛНИТЕЛЬНЫЕ ТРЕБОВАНИЯ\n");
+
         if (settings.isUseLLMForTestPlanning()) {
-            prompt.append("- Проанализируй логику метода и предложи дополнительные пограничные кейсы\n");
+            prompt.append("### Анализ граничных случаев\n");
+            prompt.append("- Проанализируй бизнес-логику метода\n");
+            prompt.append("- Добавь тест-кейсы для граничных значений\n");
+            prompt.append("- Включи проверку обработки исключительных ситуаций\n");
+            prompt.append("- Рассмотри сценарии с некорректными входными данными\n");
         }
-        prompt.append("- Если метод возвращает ResponseEntity, проверяй не только статус, но и тело\n");
-        prompt.append("- Для POST/PUT методов генерируй валидные тестовые данные\n");
-        prompt.append("- Для методов с @PathVariable и @RequestParam генерируй тесты с разными значениями\n");
+
+        prompt.append("""
+                ### Проверки ответов
+                - Для методов, возвращающих `ResponseEntity`, проверяй:
+                  * HTTP статус
+                  * Заголовки (Location, Content-Type)
+                  * Тело ответа с проверкой всех значимых полей
+                        
+                ### Генерация тестовых данных
+                - POST/PUT/PATCH методы: создавай реалистичные DTO с валидными значениями
+                - Для полей с аннотациями валидации (@NotNull, @Size, @Pattern) учитывай ограничения
+                - Для @PathVariable и @RequestParam создавай тесты с:
+                  * Валидными значениями
+                  * Невалидными значениями (отсутствующие, некорректные)
+                  * Граничными значениями
+                        
+                ### Очистка данных
+                - Всегда предусматривай постусловия для удаления созданных данных
+                - Используй @AfterEach для гарантированной очистки
+                """);
 
         // 7. Финальная инструкция
-        prompt.append("### ОТВЕТ\n");
-        prompt.append("Сгенерируй полный тест-кейс пригодный для регистрации в Zephyr.");
+        prompt.append("## ТРЕБОВАНИЯ К ФОРМАТУ ОТВЕТА\n");
+        prompt.append("Предоставь тест-кейсы в формате, описанном в системном промпте. ");
+        prompt.append("Каждый тест-кейс должен быть готов к регистрации в Zephyr.\n");
+        prompt.append("Не добавляй пояснений вне структуры тест-кейсов.\n");
 
         return prompt.toString();
     }
@@ -132,16 +271,13 @@ public class PromptBuilder {
         StringBuilder sb = new StringBuilder();
 
         if (context.getRequestDTOs().isEmpty() && context.getResponseDTOs().isEmpty()) {
-            sb.append("// Нет DTO для этого эндпоинта (используются примитивы или JDK типы)\n");
+            sb.append("**Примечание:** Эндпоинт использует примитивные типы или JDK-классы без кастомных DTO.\n");
             return sb.toString();
         }
 
         // Request DTOs
-        Map<String, MethodContext.DTOInfo> dtos = new HashMap<>();
-
-
-
         if (!context.getRequestDTOs().isEmpty()) {
+            sb.append("### Request DTOs\n");
             for (MethodContext.DTOInfo dto : context.getRequestDTOs()) {
                 sb.append(formatSingleDTO(dto, "REQUEST")).append("\n");
             }
@@ -149,6 +285,7 @@ public class PromptBuilder {
 
         // Response DTOs
         if (!context.getResponseDTOs().isEmpty()) {
+            sb.append("### Response DTOs\n");
             for (MethodContext.DTOInfo dto : context.getResponseDTOs()) {
                 sb.append(formatSingleDTO(dto, "RESPONSE")).append("\n");
             }
@@ -157,71 +294,83 @@ public class PromptBuilder {
         return sb.toString();
     }
 
-    /**
-     * Форматирует один DTO
-     */
     @NotNull
     private String formatSingleDTO(@NotNull MethodContext.DTOInfo dto, @NotNull String usage) {
         StringBuilder sb = new StringBuilder();
 
+        // Для примитивных типов и простых оберток
         String type = dto.getClassName().toLowerCase();
+        if (type.contains("integer") || type.contains("long")) {
+            return "```json\n123\n```\n";
+        }
+        if (type.contains("boolean")) {
+            return "```json\ntrue\n```\n";
+        }
+        if (type.contains("double") || type.contains("float")) {
+            return "```json\n123.45\n```\n";
+        }
+        if (type.contains("string")) {
+            return "```json\n\"example-value\"\n```\n";
+        }
+        if (type.contains("list") || type.contains("array")) {
+            return "```json\n[]\n```\n";
+        }
+        if (type.contains("map")) {
+            return "```json\n{}\n```\n";
+        }
+        if (type.contains("uuid")) {
+            return "```json\n\"" + UUID.randomUUID() + "\"\n```\n";
+        }
+        if (type.contains("localdate")) {
+            return "```json\n\"2024-01-01\"\n```\n";
+        }
+        if (type.contains("localdatetime")) {
+            return "```json\n\"2024-01-01T10:00:00\"\n```\n";
+        }
 
-        if (type.contains("integer") || type.contains("long")) return "```json\n123\n```";
-        if (type.contains("boolean")) return "```json\ntrue\n```";
-        if (type.contains("double") || type.contains("float")) return "```json\n123.45\n```";
-        if (type.contains("list") || type.contains("array")) return "```json\n[]\n```";
-        if (type.contains("map")) return "```json\n{}\n```";
-        if (type.contains("optional")) return "```json\nnull";
-        if (type.contains("uuid")) return "```json\n\"" + UUID.randomUUID() + "\"\n```";
-        if (type.contains("localdate")) return "```json\n\"01-01-2001\"\n```";
-        if (type.contains("localdatetime")) return "```json\n\"01-01-2001 00:00:00\"\n```";
+        // Для кастомных DTO
+        sb.append("#### `").append(dto.getClassName()).append("`");
+        if (!dto.getCategory().isEmpty()) {
+            sb.append(" *(").append(dto.getCategory()).append(")*");
+        }
+        sb.append("\n\n");
 
-        sb.append("##### ").append(dto.getClassName()).append("\n");
-        sb.append("Category: ").append(dto.getCategory()).append("\n");
-        sb.append("Fields:\n");
-
+        sb.append("**Поля:**\n");
         for (MethodContext.DTOInfo.FieldInfo field : dto.getFields()) {
-            sb.append("  - ").append(field.getName())
-                    .append(": ").append(field.getTypeName());
+            sb.append("- **").append(field.getName()).append("**: `").append(field.getTypeName()).append("`");
 
             if (!field.getAnnotations().isEmpty()) {
-                sb.append(" [").append(String.join(", ", field.getAnnotations())).append("]");
+                sb.append(" *Аннотации: ").append(String.join(", ", field.getAnnotations())).append("*");
             }
 
             if (field.isNullable()) {
-                sb.append(" (nullable)");
+                sb.append(" (может быть null)");
             }
             sb.append("\n");
         }
+        sb.append("\n");
 
-        sb.append("JSON Example:\n```json\n").append(dto.getJsonExample()).append("\n```\n\n");
+        sb.append("**Пример JSON:**\n```json\n").append(dto.getJsonExample()).append("\n```\n\n");
 
         return sb.toString();
     }
 
-
     @NotNull
     private String formatMethodInfo(PsiMethod method) {
         StringBuilder sb = new StringBuilder();
-        sb.append("```java\n");
-
 
         ReadAction.run(() -> {
             // Аннотации
-
             for (var ann : method.getAnnotations()) {
                 sb.append(ann.getText()).append("\n");
             }
 
-            // Сигнатура
-
+            // Сигнатура метода
             sb.append(method.getReturnType().getPresentableText())
                     .append(" ")
                     .append(method.getName())
                     .append("(");
-        });
 
-        ReadAction.run(() -> {
             var params = method.getParameterList().getParameters();
             for (int i = 0; i < params.length; i++) {
                 if (i > 0) sb.append(", ");
@@ -229,11 +378,9 @@ public class PromptBuilder {
                         .append(" ")
                         .append(params[i].getName());
             }
-        });
-        sb.append(")");
+            sb.append(")");
 
-        // Исключения
-        ReadAction.run(() -> {
+            // Исключения
             var throwsList = method.getThrowsList().getReferencedTypes();
             if (throwsList.length > 0) {
                 sb.append(" throws ");
@@ -245,44 +392,31 @@ public class PromptBuilder {
 
             sb.append(" {\n");
 
-            // Тело (сокращённо)
+            // Тело метода
             if (method.getBody() != null) {
                 String body = method.getBody().getText();
-                if (body.length() > 1300) {
-                    body = body.substring(0, 1300) + "\n    // ... [код сокращён]\n";
+                if (body.length() > 1500) {
+                    body = body.substring(0, 1500) + "\n    // ... [код сокращен для краткости]\n";
                 }
                 sb.append(body).append("\n");
             } else {
-                sb.append("    // abstract or native method\n");
+                sb.append("    // абстрактный метод\n");
             }
-            sb.append("}\n```\n");
+            sb.append("}\n");
         });
 
-        return sb.toString();
+        return "```java\n" + sb.toString() + "```\n";
     }
 
     @NotNull
     private String formatCalledMethod(MethodContext.MethodInfo info) {
-        if ("interface_implementations".equals(info.getSignature())) {
+        if (info.getBodySnippet() != null) {
             return String.format("""
-                            Метод: %s
-                            Возвращает: %s
-                            Параметры: %s
-                            Исключения: %s
-                            %s
-                            """,
-                    info.getSignature(),
-                    info.getReturnType(),
-                    String.join(", ", info.getParameters()),
-                    info.getThrownExceptions().isEmpty() ? "нет" : String.join(", ", info.getThrownExceptions()),
-                    info.getBodySnippet() != null ? info.getBodySnippet() : "// тело метода недоступно"
-            );
-        } else {
-            return String.format("""
-                            Метод: %s
-                            Возвращает: %s
-                            Параметры: %s
-                            Исключения: %s
+                            **Метод:** `%s`
+                            **Возвращает:** `%s`
+                            **Параметры:** `%s`
+                            **Исключения:** %s
+                                                
                             ```java
                             %s
                             ```
@@ -291,7 +425,20 @@ public class PromptBuilder {
                     info.getReturnType(),
                     String.join(", ", info.getParameters()),
                     info.getThrownExceptions().isEmpty() ? "нет" : String.join(", ", info.getThrownExceptions()),
-                    info.getBodySnippet() != null ? info.getBodySnippet() : "// тело метода недоступно"
+                    info.getBodySnippet()
+            );
+        } else {
+            return String.format("""
+                            **Метод:** `%s`
+                            **Возвращает:** `%s`
+                            **Параметры:** `%s`
+                            **Исключения:** %s
+                            *Тело метода недоступно для анализа*
+                            """,
+                    info.getSignature(),
+                    info.getReturnType(),
+                    String.join(", ", info.getParameters()),
+                    info.getThrownExceptions().isEmpty() ? "нет" : String.join(", ", info.getThrownExceptions())
             );
         }
     }
@@ -299,93 +446,129 @@ public class PromptBuilder {
     @NotNull
     private String formatTestCase(TestCase tc) {
         return String.format("""
-                        [%s] %s
-                        - Метод: %s %s
-                        - Ожидаемый статус: %s
-                        - Входные данные: %s
+                        **ID:** %s
+                        **Описание:** %s
+                        **Метод:** %s %s
+                        **Ожидаемый статус:** %s
+                        **Входные данные:** %s
                         """,
                 tc.getId(),
                 tc.getDescription(),
                 tc.getHttpMethod(),
                 tc.getEndpoint(),
                 tc.getExpectedStatus(),
-                tc.getInput().isEmpty() ? "стандартные" : tc.getInput().toString()
+                tc.getInput().isEmpty() ? "стандартные (см. контекст)" : "```json\n" + tc.getInput().toString() + "\n```"
         );
     }
 
     @NotNull
     public String buildFixPrompt(@NotNull String brokenCode, @NotNull List<String> errors) {
         return String.format("""
-                        ### ЗАДАЧА: ИСПРАВЛЕНИЕ ОШИБОК В КОДЕ ###
-                                    
-                        Ты — эксперт по Java и фреймворку Spring. 
-                        Исправь следующие ошибки в сгенерированном коде теста.
-                                    
-                        ### ОШИБКИ ###
+                        ## ЗАДАЧА: ИСПРАВЛЕНИЕ ОШИБОК В ТЕСТОВОМ КОДЕ
+                                        
+                        ### ИНСТРУКЦИЯ
+                        Ты — эксперт по Java и Spring Boot тестированию.
+                        Исправь ошибки в предоставленном коде теста.
+                                        
+                        ### ОБНАРУЖЕННЫЕ ОШИБКИ
                         %s
-                                    
-                        ### ОШИБОЧНЫЙ КОД ###
+                                        
+                        ### КОД С ОШИБКАМИ
                         ```java
                         %s
                         ```
-                                    
-                        ### ТРЕБОВАНИЯ К ИСПРАВЛЕНИЮ ###
-                        - Исправь ТОЛЬКО указанные ошибки, не меняй логику тестов
-                        - Сохрани все импорты и структуру класса
-                        - Если ошибка в импорте — добавь правильный import
-                        - Если ошибка в аннотации — проверь, что класс импортирован
-                        - Если метод не найден — предложи альтернативу из RestAssured/JUnit
-                        - Верни ПОЛНЫЙ исправленный код, а не только изменённые фрагменты
-                                    
-                        ### ОТВЕТ ###
-                        Верни только исправленный Java-код, без пояснений и markdown.
+                                        
+                        ### ПРАВИЛА ИСПРАВЛЕНИЯ
+                        1. Исправь ТОЛЬКО указанные ошибки
+                        2. Не меняй логику тестов и названия методов
+                        3. Сохрани все корректные импорты и структуру класса
+                        4. При исправлении импортов добавляй правильные, удаляй неправильные
+                        5. Если ошибка в аннотации — проверь правильность импорта и атрибутов
+                        6. Если метод не найден — используй альтернативу из RestAssured/JUnit/AssertJ
+                        7. Проверь, что все переменные и методы доступны в контексте теста
+                                        
+                        ### ФОРМАТ ОТВЕТА
+                        Верни полный исправленный Java код.
+                        Не добавляй пояснений, не оборачивай в markdown блоки.
                         """,
                 errors.stream().map(e -> "- " + e).collect(Collectors.joining("\n")),
                 brokenCode
         );
     }
 
-    public String buildCodePrompt(MethodContext context, String testCases, LspragSettingsState settings) {
+    @NotNull
+    public String buildCodePrompt(@NotNull MethodContext context,
+                                  @NotNull String testCases,
+                                  @NotNull LspragSettingsState settings) {
         StringBuilder prompt = new StringBuilder();
 
         // 1. Системная инструкция
         prompt.append(SYSTEM_CODE).append("\n\n");
 
         // 2. Информация о целевом методе
-        prompt.append("### ЦЕЛЕВОЙ МЕТОД\n");
+        prompt.append("## ТЕСТИРУЕМЫЙ МЕТОД\n");
         prompt.append(formatMethodInfo(context.getTargetMethod())).append("\n\n");
 
-        // 3. Контекст вызываемых методов
+        // 3. Контекст вызываемых методов (зависимости)
         if (!context.getCalledMethods().isEmpty()) {
-            prompt.append("### ВЫЗЫВАЕМЫЕ МЕТОДЫ (контекст)\n");
+            prompt.append("## ЗАВИСИМОСТИ МЕТОДА\n");
+            prompt.append("При тестировании нужно учитывать поведение следующих методов:\n\n");
             for (MethodContext.MethodInfo info : context.getCalledMethods().values()) {
                 prompt.append(formatCalledMethod(info)).append("\n");
             }
             prompt.append("\n");
         }
 
-        // 4. DTO и модели данных (если есть в контексте)
-        prompt.append("### МОДЕЛИ ДАННЫХ\n");
+        // 4. Модели данных
+        prompt.append("## МОДЕЛИ ДАННЫХ\n");
         prompt.append(formatDTOs(context)).append("\n\n");
 
-
-        // 5. Список тест-кейсов
-        prompt.append("### ТЕСТ-КЕЙСЫ ДЛЯ ГЕНЕРАЦИИ\n");
+        // 5. Тест-кейсы для реализации
+        prompt.append("## ТЕСТ-КЕЙСЫ ДЛЯ РЕАЛИЗАЦИИ\n");
         prompt.append(testCases);
         prompt.append("\n");
 
-        // 6. Дополнительные инструкции
-        prompt.append("### ДОПОЛНИТЕЛЬНЫЕ ТРЕБОВАНИЯ\n");
+        // 6. Дополнительные требования по коду
+        prompt.append("## ТЕХНИЧЕСКИЕ ТРЕБОВАНИЯ К КОДУ\n");
+
         if (settings.isUseLLMForTestPlanning()) {
-            prompt.append("- Проанализируй логику метода и предложи дополнительные пограничные кейсы\n");
+            prompt.append("""
+                    ### Расширенное тестирование
+                    - Добавь тесты для граничных случаев на основе анализа метода
+                    - Включи проверку обработки исключений
+                    - Реализуй тесты с некорректными входными данными
+                    """);
         }
-        prompt.append("- Если метод возвращает ResponseEntity, проверяй не только статус, но и тело\n");
-        prompt.append("- Для POST/PUT методов генерируй валидные тестовые данные\n");
-        prompt.append("- Для методов с @PathVariable и @RequestParam генерируй тесты с разными значениями\n");
+
+        prompt.append("""
+                ### Работа с ответами
+                - Для `ResponseEntity`: проверяй статус, заголовки и тело
+                - Для коллекций: проверяй размер, содержимое и порядок (если важен)
+                        
+                ### Генерация тестовых данных
+                - Создавай тестовые данные через билдеры или фабричные методы
+                - Учитывай аннотации валидации (@NotNull, @Size, @Pattern, @Email)
+                - Для POST/PUT/PATCH всегда генерируй валидные DTO
+                        
+                ### Обработка параметров
+                - @PathVariable: проверяй валидные и невалидные значения
+                - @RequestParam: проверяй обязательные и опциональные параметры
+                - @RequestBody: проверяй валидные и невалидные DTO
+                        
+                ### Очистка данных
+                - Используй `@AfterEach` для удаления тестовых данных
+                - Для интеграционных тестов предпочтительнее `@Transactional`
+                        
+                ### Структура кода
+                - Группируй тесты по функциональности
+                - Используй вспомогательные методы для создания тестовых данных
+                - Добавляй JavaDoc к сложным проверкам
+                """);
 
         // 7. Финальная инструкция
-        prompt.append("### ОТВЕТ\n");
-        prompt.append("Сгенерируй полный тест-кейс пригодный для регистрации в Zephyr.");
+        prompt.append("## ФОРМАТ ОТВЕТА\n");
+        prompt.append("Верни полный Java код тестового класса, готовый к компиляции и запуску.\n");
+        prompt.append("Не добавляй пояснений, не оборачивай код в markdown-блоки.\n");
 
         return prompt.toString();
     }
