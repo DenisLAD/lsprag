@@ -42,5 +42,4 @@ bin/
 .DS_Store
 /.idea/
 /.run/
-/gradle/
 /gradlew.bat
