@@ -28,7 +28,6 @@ public class GigaChatGateway implements LLMGateway {
     private final GigaChatTokenManager tokenManager;
     private final HttpClient httpClient;
     private final Gson gson;
-    private final LspragSettingsState settings;
 
     public GigaChatGateway(@NotNull GigaChatConfig config, LspragSettingsState settings) {
         this.config = config;
@@ -37,7 +36,6 @@ public class GigaChatGateway implements LLMGateway {
         this.gson = new GsonBuilder()
                 .setPrettyPrinting()
                 .create();
-        this.settings = settings;
     }
 
     @Override
@@ -50,10 +48,6 @@ public class GigaChatGateway implements LLMGateway {
      */
     public String generate(@NotNull String prompt, @Nullable String systemPrompt)
             throws IOException, LLMException {
-
-        if (!config.hasCredentials() && StringUtils.isBlank(settings.getApiToken())) {
-            throw new LLMException("GigaChat credentials not configured", null);
-        }
 
         // Получаем токен доступа (автоматически обновляет если истёк)
         String accessToken;
@@ -159,7 +153,9 @@ public class GigaChatGateway implements LLMGateway {
         HttpPost httpRequest = new HttpPost(config.getCompletionsUrl());
         httpRequest.setHeader("Content-Type", "application/json; charset=UTF-8");
         httpRequest.setHeader("Accept", "application/json; charset=UTF-8");
-        httpRequest.setHeader("Authorization", "Bearer " + accessToken);
+        if (!StringUtils.isBlank(accessToken)) {
+            httpRequest.setHeader("Authorization", "Bearer " + accessToken);
+        }
         httpRequest.setHeader("X-Request-ID", config.generateRqUID());
         httpRequest.setEntity(new ByteArrayEntity(bodyBytes));
 
