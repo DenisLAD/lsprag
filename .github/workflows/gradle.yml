@@ -36,17 +36,12 @@ jobs:
       run: chmod +x gradlew
     - name: Build with Gradle Wrapper
       run: ./gradlew buildPlugin
-    - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
+    - name: Create Release and Upload Asset
+      uses: softprops/action-gh-release@v2
+      with:
+        files: build/distributions/lsprag-1.0.1.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        # The tag name (e.g., v1.0.0)
-        upload_url: ${{ github.event.release.upload_url }} 
-        # Path to the generated zip file
-        asset_path: build/distributions/lsprag-1.0.1.zip
-        asset_name: lsprag-1.0.1.zip
-        asset_content_type: application/zip
 
     # NOTE: The Gradle Wrapper is the default and recommended way to run Gradle (https://docs.gradle.org/current/userguide/gradle_wrapper.html).
     # If your project does not have the Gradle Wrapper configured, you can use the following configuration to run Gradle with a specified version.
