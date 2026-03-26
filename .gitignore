@@ -43,5 +43,4 @@ bin/
 /.idea/
 /.run/
 /gradle/
-/gradlew
 /gradlew.bat
