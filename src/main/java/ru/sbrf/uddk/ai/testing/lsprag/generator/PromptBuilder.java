@@ -1,15 +1,14 @@
 
 package ru.sbrf.uddk.ai.testing.lsprag.generator;
 
-import com.intellij.openapi.application.ReadAction;
-import com.intellij.psi.PsiMethod;
+import org.apache.commons.collections.CollectionUtils;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import ru.sbrf.uddk.ai.testing.lsprag.LspragSettingsState;
 import ru.sbrf.uddk.ai.testing.lsprag.context.MethodContext;
 import ru.sbrf.uddk.ai.testing.lsprag.model.TestCase;
 
 import java.util.List;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 public class PromptBuilder {
@@ -115,13 +114,13 @@ public class PromptBuilder {
             @AutoConfigureMockMvc
             @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
             class ResourceNameTest {
-                
+                        
                 @LocalServerPort
                 private int port;
-                
+                        
                 @Autowired
                 private TestRestTemplate restTemplate;
-                
+                        
                 @MockBean
                 private ExternalService externalService;
                 
@@ -192,7 +191,7 @@ public class PromptBuilder {
 
     @NotNull
     public String buildPrompt(@NotNull MethodContext context,
-                              @NotNull List<TestCase> testCases,
+                              @Nullable List<TestCase> testCases,
                               @NotNull LspragSettingsState settings) {
 
         StringBuilder prompt = new StringBuilder();
@@ -200,31 +199,17 @@ public class PromptBuilder {
         // 1. Системная инструкция
         prompt.append(SYSTEM_PROMPT).append("\n\n");
 
-        // 2. Информация о целевом методе
-        prompt.append("## ИСХОДНЫЙ КОД МЕТОДА\n");
-        prompt.append(formatMethodInfo(context.getTargetMethod())).append("\n\n");
+        prompt.append(PromptContextBuilder.buildPrompt(context));
 
-        // 3. Контекст вызываемых методов
-        if (!context.getCalledMethods().isEmpty()) {
-            prompt.append("## ЗАВИСИМОСТИ МЕТОДА\n");
-            prompt.append("Метод использует следующие зависимости:\n");
-            for (MethodContext.MethodInfo info : context.getCalledMethods().values()) {
-                prompt.append(formatCalledMethod(info)).append("\n");
+        if (CollectionUtils.isNotEmpty(testCases)) {
+            // 5. Список тест-кейсов для генерации
+            prompt.append("## ТЕСТ-КЕЙСЫ\n");
+            prompt.append("Создай тест-кейсы для следующих сценариев:\n\n");
+            for (TestCase tc : testCases) {
+                prompt.append(formatTestCase(tc)).append("\n");
             }
             prompt.append("\n");
         }
-
-        // 4. DTO и модели данных
-        prompt.append("## МОДЕЛИ ДАННЫХ\n");
-        prompt.append(formatDTOs(context)).append("\n\n");
-
-        // 5. Список тест-кейсов для генерации
-        prompt.append("## ТЕСТ-КЕЙСЫ\n");
-        prompt.append("Создай тест-кейсы для следующих сценариев:\n\n");
-        for (TestCase tc : testCases) {
-            prompt.append(formatTestCase(tc)).append("\n");
-        }
-        prompt.append("\n");
 
         // 6. Дополнительные инструкции на основе настроек
         prompt.append("## ДОПОЛНИТЕЛЬНЫЕ ТРЕБОВАНИЯ\n");
@@ -267,183 +252,6 @@ public class PromptBuilder {
     }
 
     @NotNull
-    private String formatDTOs(@NotNull MethodContext context) {
-        StringBuilder sb = new StringBuilder();
-
-        if (context.getRequestDTOs().isEmpty() && context.getResponseDTOs().isEmpty()) {
-            sb.append("**Примечание:** Эндпоинт использует примитивные типы или JDK-классы без кастомных DTO.\n");
-            return sb.toString();
-        }
-
-        // Request DTOs
-        if (!context.getRequestDTOs().isEmpty()) {
-            sb.append("### Request DTOs\n");
-            for (MethodContext.DTOInfo dto : context.getRequestDTOs()) {
-                sb.append(formatSingleDTO(dto, "REQUEST")).append("\n");
-            }
-        }
-
-        // Response DTOs
-        if (!context.getResponseDTOs().isEmpty()) {
-            sb.append("### Response DTOs\n");
-            for (MethodContext.DTOInfo dto : context.getResponseDTOs()) {
-                sb.append(formatSingleDTO(dto, "RESPONSE")).append("\n");
-            }
-        }
-
-        return sb.toString();
-    }
-
-    @NotNull
-    private String formatSingleDTO(@NotNull MethodContext.DTOInfo dto, @NotNull String usage) {
-        StringBuilder sb = new StringBuilder();
-
-        // Для примитивных типов и простых оберток
-        String type = dto.getClassName().toLowerCase();
-        if (type.contains("integer") || type.contains("long")) {
-            return "```json\n123\n```\n";
-        }
-        if (type.contains("boolean")) {
-            return "```json\ntrue\n```\n";
-        }
-        if (type.contains("double") || type.contains("float")) {
-            return "```json\n123.45\n```\n";
-        }
-        if (type.contains("string")) {
-            return "```json\n\"example-value\"\n```\n";
-        }
-        if (type.contains("list") || type.contains("array")) {
-            return "```json\n[]\n```\n";
-        }
-        if (type.contains("map")) {
-            return "```json\n{}\n```\n";
-        }
-        if (type.contains("uuid")) {
-            return "```json\n\"" + UUID.randomUUID() + "\"\n```\n";
-        }
-        if (type.contains("localdate")) {
-            return "```json\n\"2024-01-01\"\n```\n";
-        }
-        if (type.contains("localdatetime")) {
-            return "```json\n\"2024-01-01T10:00:00\"\n```\n";
-        }
-
-        // Для кастомных DTO
-        sb.append("#### `").append(dto.getClassName()).append("`");
-        if (!dto.getCategory().isEmpty()) {
-            sb.append(" *(").append(dto.getCategory()).append(")*");
-        }
-        sb.append("\n\n");
-
-        sb.append("**Поля:**\n");
-        for (MethodContext.DTOInfo.FieldInfo field : dto.getFields()) {
-            sb.append("- **").append(field.getName()).append("**: `").append(field.getTypeName()).append("`");
-
-            if (!field.getAnnotations().isEmpty()) {
-                sb.append(" *Аннотации: ").append(String.join(", ", field.getAnnotations())).append("*");
-            }
-
-            if (field.isNullable()) {
-                sb.append(" (может быть null)");
-            }
-            sb.append("\n");
-        }
-        sb.append("\n");
-
-        sb.append("**Пример JSON:**\n```json\n").append(dto.getJsonExample()).append("\n```\n\n");
-
-        return sb.toString();
-    }
-
-    @NotNull
-    private String formatMethodInfo(PsiMethod method) {
-        StringBuilder sb = new StringBuilder();
-
-        ReadAction.run(() -> {
-            // Аннотации
-            for (var ann : method.getAnnotations()) {
-                sb.append(ann.getText()).append("\n");
-            }
-
-            // Сигнатура метода
-            sb.append(method.getReturnType().getPresentableText())
-                    .append(" ")
-                    .append(method.getName())
-                    .append("(");
-
-            var params = method.getParameterList().getParameters();
-            for (int i = 0; i < params.length; i++) {
-                if (i > 0) sb.append(", ");
-                sb.append(params[i].getType().getPresentableText())
-                        .append(" ")
-                        .append(params[i].getName());
-            }
-            sb.append(")");
-
-            // Исключения
-            var throwsList = method.getThrowsList().getReferencedTypes();
-            if (throwsList.length > 0) {
-                sb.append(" throws ");
-                for (int i = 0; i < throwsList.length; i++) {
-                    if (i > 0) sb.append(", ");
-                    sb.append(throwsList[i].getPresentableText());
-                }
-            }
-
-            sb.append(" {\n");
-
-            // Тело метода
-            if (method.getBody() != null) {
-                String body = method.getBody().getText();
-                if (body.length() > 1500) {
-                    body = body.substring(0, 1500) + "\n    // ... [код сокращен для краткости]\n";
-                }
-                sb.append(body).append("\n");
-            } else {
-                sb.append("    // абстрактный метод\n");
-            }
-            sb.append("}\n");
-        });
-
-        return "```java\n" + sb.toString() + "```\n";
-    }
-
-    @NotNull
-    private String formatCalledMethod(MethodContext.MethodInfo info) {
-        if (info.getBodySnippet() != null) {
-            return String.format("""
-                            **Метод:** `%s`
-                            **Возвращает:** `%s`
-                            **Параметры:** `%s`
-                            **Исключения:** %s
-                                                
-                            ```java
-                            %s
-                            ```
-                            """,
-                    info.getSignature(),
-                    info.getReturnType(),
-                    String.join(", ", info.getParameters()),
-                    info.getThrownExceptions().isEmpty() ? "нет" : String.join(", ", info.getThrownExceptions()),
-                    info.getBodySnippet()
-            );
-        } else {
-            return String.format("""
-                            **Метод:** `%s`
-                            **Возвращает:** `%s`
-                            **Параметры:** `%s`
-                            **Исключения:** %s
-                            *Тело метода недоступно для анализа*
-                            """,
-                    info.getSignature(),
-                    info.getReturnType(),
-                    String.join(", ", info.getParameters()),
-                    info.getThrownExceptions().isEmpty() ? "нет" : String.join(", ", info.getThrownExceptions())
-            );
-        }
-    }
-
-    @NotNull
     private String formatTestCase(TestCase tc) {
         return String.format("""
                         **ID:** %s
@@ -462,7 +270,7 @@ public class PromptBuilder {
     }
 
     @NotNull
-    public String buildFixPrompt(@NotNull String brokenCode, @NotNull List<String> errors) {
+    public static String buildFixPrompt(@NotNull String brokenCode, @NotNull List<String> errors) {
         return String.format("""
                         ## ЗАДАЧА: ИСПРАВЛЕНИЕ ОШИБОК В ТЕСТОВОМ КОДЕ
                                         
@@ -505,23 +313,7 @@ public class PromptBuilder {
         // 1. Системная инструкция
         prompt.append(SYSTEM_CODE).append("\n\n");
 
-        // 2. Информация о целевом методе
-        prompt.append("## ТЕСТИРУЕМЫЙ МЕТОД\n");
-        prompt.append(formatMethodInfo(context.getTargetMethod())).append("\n\n");
-
-        // 3. Контекст вызываемых методов (зависимости)
-        if (!context.getCalledMethods().isEmpty()) {
-            prompt.append("## ЗАВИСИМОСТИ МЕТОДА\n");
-            prompt.append("При тестировании нужно учитывать поведение следующих методов:\n\n");
-            for (MethodContext.MethodInfo info : context.getCalledMethods().values()) {
-                prompt.append(formatCalledMethod(info)).append("\n");
-            }
-            prompt.append("\n");
-        }
-
-        // 4. Модели данных
-        prompt.append("## МОДЕЛИ ДАННЫХ\n");
-        prompt.append(formatDTOs(context)).append("\n\n");
+        prompt.append(PromptContextBuilder.buildPrompt(context));
 
         // 5. Тест-кейсы для реализации
         prompt.append("## ТЕСТ-КЕЙСЫ ДЛЯ РЕАЛИЗАЦИИ\n");

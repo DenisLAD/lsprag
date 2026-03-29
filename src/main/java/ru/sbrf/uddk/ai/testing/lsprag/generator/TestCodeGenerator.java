@@ -2,6 +2,7 @@ package ru.sbrf.uddk.ai.testing.lsprag.generator;
 
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import ru.sbrf.uddk.ai.testing.lsprag.LspragSettingsState;
 import ru.sbrf.uddk.ai.testing.lsprag.context.MethodContext;
 import ru.sbrf.uddk.ai.testing.lsprag.llm.LLMGateway;
@@ -13,7 +14,7 @@ import ru.sbrf.uddk.ai.testing.lsprag.utils.LLMResponseParser;
 import java.io.IOException;
 import java.util.List;
 
-public class TestCodeGenerator {
+public class TestCodeGenerator implements ITestCodeGenerator {
 
     private final LLMGateway llmGateway;
     private final LspragSettingsState settings;
@@ -26,8 +27,9 @@ public class TestCodeGenerator {
         this.promptBuilder = new PromptBuilder();
     }
 
+    @Override
     public GeneratedTestData generateTestData(Project project, @NotNull MethodContext context,
-                                              @NotNull List<TestCase> testCases)
+                                              @Nullable List<TestCase> testCases)
             throws LLMGateway.LLMException {
         String prompt = promptBuilder.buildPrompt(context, testCases, settings);
         String rawResponse = null;
@@ -40,6 +42,7 @@ public class TestCodeGenerator {
         return new GeneratedTestData(rawResponse, generateTestClass(project, context, rawResponse));
     }
 
+    @Override
     @NotNull
     public String generateTestClass(@NotNull Project project, @NotNull MethodContext context,
                                     @NotNull String generatedTestCases)
@@ -61,6 +64,7 @@ public class TestCodeGenerator {
         return LLMResponseParser.extractJavaCode(fixedCode);
     }
 
+    @Override
     @NotNull
     public String fixCode(@NotNull String brokenCode,
                           @NotNull List<String> errors)

@@ -29,5 +29,12 @@
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt G"/>
         </action>
+        <action id="Lsprag.GenerateUnitTests"
+                class="ru.sbrf.uddk.ai.testing.lsprag.GenerateUnitTestsAction"
+                text="Создать Unit Тесты"
+                description="Генерация юнит тестов">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt T"/>
+        </action>
     </actions>
 </idea-plugin>

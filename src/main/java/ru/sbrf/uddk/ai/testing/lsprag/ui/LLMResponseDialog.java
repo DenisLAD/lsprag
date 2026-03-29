@@ -2,15 +2,11 @@ package ru.sbrf.uddk.ai.testing.lsprag.ui;
 
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
-import com.intellij.openapi.ui.Messages;
-import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.Consumer;
 import com.intellij.util.ui.JBUI;
-import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import ru.sbrf.uddk.ai.testing.lsprag.model.GenerationResult;
 import ru.sbrf.uddk.ai.testing.lsprag.model.TestCase;
 
 import javax.swing.*;
@@ -39,9 +35,9 @@ public class LLMResponseDialog extends DialogWrapper {
 
     public LLMResponseDialog(@Nullable Project project,
                              @NotNull String promptText,
-                             @NotNull String scenarioText,
-                             @NotNull String javaCodeText,
-                             @NotNull List<TestCase> testCases,
+                             @Nullable String scenarioText,
+                             @Nullable String javaCodeText,
+                             @Nullable List<TestCase> testCases,
                              @NotNull Consumer<String> applyAction) {
         super(project);
         this.project = project;

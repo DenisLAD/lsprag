@@ -8,14 +8,17 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.psi.PsiMethod;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import ru.sbrf.uddk.ai.testing.lsprag.LspragSettingsState;
 import ru.sbrf.uddk.ai.testing.lsprag.context.EnhancedContextRetriever;
 import ru.sbrf.uddk.ai.testing.lsprag.context.MethodContext;
 import ru.sbrf.uddk.ai.testing.lsprag.exceptions.GenerationException;
 import ru.sbrf.uddk.ai.testing.lsprag.extraction.DTOContextExtractor;
 import ru.sbrf.uddk.ai.testing.lsprag.extraction.KeyTokenExtractor;
+import ru.sbrf.uddk.ai.testing.lsprag.generator.ITestCodeGenerator;
 import ru.sbrf.uddk.ai.testing.lsprag.generator.PromptBuilder;
 import ru.sbrf.uddk.ai.testing.lsprag.generator.TestCodeGenerator;
+import ru.sbrf.uddk.ai.testing.lsprag.generator.UnitTestCodeGenerator;
 import ru.sbrf.uddk.ai.testing.lsprag.llm.LLMAdapterFactory;
 import ru.sbrf.uddk.ai.testing.lsprag.llm.LLMGateway;
 import ru.sbrf.uddk.ai.testing.lsprag.model.GeneratedTestData;
@@ -47,34 +50,7 @@ public class LspragPluginCore {
 
         try {
             // 1. Extract key tokens
-            indicator.setText2("Extracting key tokens...");
-            KeyTokenExtractor tokenExtractor = new KeyTokenExtractor();
-            var keyTokens = tokenExtractor.extract(method);
-
-            // 2. Retrieve context
-            indicator.setText2("Retrieving context...");
-//            ContextRetriever contextRetriever = new ContextRetriever(settings.getContextDepth());
-
-            EnhancedContextRetriever contextRetriever = new EnhancedContextRetriever(
-                    project,
-                    settings.getContextDepth(),
-                    150  // Увеличили лимит узлов для анализа реализаций
-            );
-
-            indicator.setText2("Analyzing DTOs...");
-            DTOContextExtractor dtoExtractor = new DTOContextExtractor();
-            DTOContextExtractor.DTOExtractionResult dtoResult = dtoExtractor.extractDTOs(method);
-
-            MethodContext baseContext = contextRetriever.retrieveContext(method, keyTokens);
-
-            MethodContext context = new MethodContext(
-                    baseContext.getTargetMethod(),
-                    baseContext.getKeyTokens(),
-                    baseContext.getCalledMethods(),
-                    baseContext.getDepth(),
-                    dtoResult.getRequestDTOs(),
-                    dtoResult.getResponseDTOs()
-            );
+            MethodContext context = prepareMethodContext(method, indicator);
 
             // 3. Plan test cases
             indicator.setText2("Planning test cases...");
@@ -98,23 +74,53 @@ public class LspragPluginCore {
 //            TestFileWriter writer = new TestFileWriter(project);
 //            String outputPath = writer.writeTestFile(fixedCode, context);
 
-            return showPreviewDialog(context, generator, testCases);
+            return showPreviewDialog(context, generator, testCases, new PromptBuilder().buildPrompt(context, testCases, settings));
 
         } catch (LLMGateway.LLMException e) {
             throw new GenerationException("Generation failed: " + e.getMessage(), e);
         }
     }
 
+    private @NotNull MethodContext prepareMethodContext(@NotNull PsiMethod method, ProgressIndicator indicator) {
+        indicator.setText2("Extracting key tokens...");
+        KeyTokenExtractor tokenExtractor = new KeyTokenExtractor();
+        var keyTokens = tokenExtractor.extract(method);
+
+        // 2. Retrieve context
+        indicator.setText2("Retrieving context...");
+//            ContextRetriever contextRetriever = new ContextRetriever(settings.getContextDepth());
+
+        EnhancedContextRetriever contextRetriever = new EnhancedContextRetriever(
+                project,
+                settings.getContextDepth(),
+                150  // Увеличили лимит узлов для анализа реализаций
+        );
+
+        indicator.setText2("Analyzing DTOs...");
+        DTOContextExtractor dtoExtractor = new DTOContextExtractor();
+        DTOContextExtractor.DTOExtractionResult dtoResult = dtoExtractor.extractDTOs(method);
+
+        MethodContext baseContext = contextRetriever.retrieveContext(method, keyTokens);
+
+        return new MethodContext(
+                baseContext.getTargetMethod(),
+                baseContext.getKeyTokens(),
+                baseContext.getCalledMethods(),
+                baseContext.getDepth(),
+                dtoResult.getRequestDTOs(),
+                dtoResult.getResponseDTOs()
+        );
+    }
+
     @NotNull
     private GenerationResult showPreviewDialog(@NotNull MethodContext context,
-                                               @NotNull TestCodeGenerator generator,
-                                               @NotNull List<TestCase> testCases) {
+                                               @Nullable ITestCodeGenerator generator,
+                                               @Nullable List<TestCase> testCases,
+                                               @NotNull String prompt) {
 
         AtomicReference<GenerationResult> resultRef = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
 
-
-        String prompt = new PromptBuilder().buildPrompt(context, testCases, settings);
         GeneratedTestData testData = generator.generateTestData(project, context, testCases);
 
         // Создаём и показываем диалог в EDT
@@ -168,5 +174,16 @@ public class LspragPluginCore {
 
         GenerationResult result = resultRef.get();
         return result != null ? result : GenerationResult.failure("No response");
+    }
+
+    public GenerationResult generateUnitTestForMethod(PsiMethod method, ProgressIndicator indicator) throws GenerationException {
+        try {
+            MethodContext context = prepareMethodContext(method, indicator);
+            LLMGateway llmGateway = LLMAdapterFactory.create(settings);
+            UnitTestCodeGenerator generator = new UnitTestCodeGenerator(llmGateway, settings);
+            return showPreviewDialog(context, generator, null, generator.buildPrompt(context, null, settings));
+        } catch (LLMGateway.LLMException e) {
+            throw new GenerationException("Generation failed: " + e.getMessage(), e);
+        }
     }
 }
