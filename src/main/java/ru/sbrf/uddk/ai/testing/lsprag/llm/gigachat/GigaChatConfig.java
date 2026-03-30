@@ -147,7 +147,7 @@ public class GigaChatConfig {
 
     @NotNull
     public String getCompletionsUrl() {
-        return API_ENDPOINT + "/chat/completions";
+        return "/chat/completions";
     }
 
     @NotNull

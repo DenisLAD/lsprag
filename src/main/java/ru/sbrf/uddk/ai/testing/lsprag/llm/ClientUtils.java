@@ -5,6 +5,7 @@ import com.intellij.credentialStore.Credentials;
 import com.intellij.ide.passwordSafe.PasswordSafe;
 import com.intellij.openapi.diagnostic.Logger;
 import org.apache.http.client.HttpClient;
+import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
 import ru.sbrf.uddk.ai.testing.lsprag.LspragSettingsState;
@@ -37,6 +38,11 @@ public class ClientUtils {
 
             if (sslContext != null) {
                 builder.setSSLContext(sslContext);
+
+                SSLConnectionSocketFactory sslSocketFactory = new SSLConnectionSocketFactory(sslContext, SSLConnectionSocketFactory.getDefaultHostnameVerifier());
+                builder.setSSLSocketFactory(sslSocketFactory);
+
+                builder.setSSLHostnameVerifier(SSLConnectionSocketFactory.getDefaultHostnameVerifier());
                 LOGGER.info("SSL configured successfully");
             } else {
                 LOGGER.warn("SSLContext creation failed, using default configuration");

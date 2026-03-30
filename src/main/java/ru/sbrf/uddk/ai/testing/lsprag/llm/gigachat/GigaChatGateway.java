@@ -28,6 +28,7 @@ public class GigaChatGateway implements LLMGateway {
     private final GigaChatTokenManager tokenManager;
     private final HttpClient httpClient;
     private final Gson gson;
+    private final LspragSettingsState settings;
 
     public GigaChatGateway(@NotNull GigaChatConfig config, LspragSettingsState settings) {
         this.config = config;
@@ -36,6 +37,7 @@ public class GigaChatGateway implements LLMGateway {
         this.gson = new GsonBuilder()
                 .setPrettyPrinting()
                 .create();
+        this.settings = settings;
     }
 
     @Override
@@ -150,7 +152,7 @@ public class GigaChatGateway implements LLMGateway {
         byte[] bodyBytes = requestBody.getBytes(StandardCharsets.UTF_8);
 
         // Создаём HTTP запрос
-        HttpPost httpRequest = new HttpPost(config.getCompletionsUrl());
+        HttpPost httpRequest = new HttpPost(settings.getLlmEndpoint() + "/" + config.getCompletionsUrl());
         httpRequest.setHeader("Content-Type", "application/json; charset=UTF-8");
         httpRequest.setHeader("Accept", "application/json; charset=UTF-8");
         if (!StringUtils.isBlank(accessToken)) {
