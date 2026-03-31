@@ -81,7 +81,7 @@ public class GenerateApiTestsAction extends AnAction {
                     LspragSettingsState settings = LspragSettingsState.getInstance();
 
                     LspragPluginCore core = new LspragPluginCore(project, settings);
-                    GenerationResult result = core.generateTestForMethod(method, indicator);
+                    GenerationResult result = core.generateTestForMethod(method, indicator, true);
 
 
                     if (result.isSuccess()) {

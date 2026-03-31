@@ -3,10 +3,12 @@ package ru.sbrf.uddk.ai.testing.lsprag.analysis;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiMethod;
+import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ImplementationContext {
 
@@ -44,8 +46,8 @@ public class ImplementationContext {
             this.beanName = beanName;
             this.priority = priority;
             this.bodySnippet = implementingMethod.getBody() != null
-                    ? truncateCode(implementingMethod.getBody().getText(), 2500)
-                    : "// No implementation (abstract or native)";
+                    ? truncateCode(implementingMethod.getBody().getText(), 12500)
+                    : "";
         }
 
         @NotNull
@@ -138,7 +140,7 @@ public class ImplementationContext {
     @NotNull
     public String formatForPrompt() {
         StringBuilder sb = new StringBuilder();
-
+        AtomicInteger ai = new AtomicInteger(0);
         ReadAction.run(() -> {
             sb.append("### INTERFACE METHOD\n");
             sb.append(interfaceMethod.getContainingClass().getName())
@@ -153,6 +155,10 @@ public class ImplementationContext {
 
                 for (int i = 0; i < implementations.size(); i++) {
                     ImplementationInfo info = implementations.get(i);
+                    if (StringUtils.isBlank(info.getBodySnippet())) {
+                        continue;
+                    }
+                    ai.incrementAndGet();
                     String marker = (info == getPrimaryImplementationInfo()) ? " [PRIMARY]" : "";
 
                     sb.append("\n--- Implementation ").append(i + 1).append(marker).append(" ---\n");
@@ -168,6 +174,6 @@ public class ImplementationContext {
                 }
             }
         });
-        return sb.toString();
+        return ai.get() == 0 ? "" : sb.toString();
     }
 }

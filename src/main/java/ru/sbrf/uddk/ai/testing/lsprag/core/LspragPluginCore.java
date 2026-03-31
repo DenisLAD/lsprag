@@ -5,8 +5,8 @@ import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.psi.PsiMethod;
+import com.intellij.util.Consumer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.sbrf.uddk.ai.testing.lsprag.LspragSettingsState;
@@ -16,11 +16,9 @@ import ru.sbrf.uddk.ai.testing.lsprag.exceptions.GenerationException;
 import ru.sbrf.uddk.ai.testing.lsprag.extraction.DTOContextExtractor;
 import ru.sbrf.uddk.ai.testing.lsprag.extraction.KeyTokenExtractor;
 import ru.sbrf.uddk.ai.testing.lsprag.generator.ITestCodeGenerator;
-import ru.sbrf.uddk.ai.testing.lsprag.generator.PromptBuilder;
 import ru.sbrf.uddk.ai.testing.lsprag.generator.TestCodeGenerator;
 import ru.sbrf.uddk.ai.testing.lsprag.generator.UnitTestCodeGenerator;
 import ru.sbrf.uddk.ai.testing.lsprag.llm.LLMAdapterFactory;
-import ru.sbrf.uddk.ai.testing.lsprag.llm.LLMGateway;
 import ru.sbrf.uddk.ai.testing.lsprag.model.GeneratedTestData;
 import ru.sbrf.uddk.ai.testing.lsprag.model.GenerationResult;
 import ru.sbrf.uddk.ai.testing.lsprag.model.TestCase;
@@ -45,55 +43,43 @@ public class LspragPluginCore {
 
     @NotNull
     public GenerationResult generateTestForMethod(@NotNull PsiMethod method,
-                                                  ProgressIndicator indicator)
+                                                  ProgressIndicator indicator, boolean isIntegrationTest)
             throws GenerationException {
 
         try {
-            // 1. Extract key tokens
+            // 1. Подготовка контекста (без вызова LLM)
             MethodContext context = prepareMethodContext(method, indicator);
-
-            // 3. Plan test cases
+            // 2. Планирование тест-кейсов
             indicator.setText2("Planning test cases...");
             TestCasePlanner planner = new TestCasePlanner();
             List<TestCase> testCases = planner.plan(context);
 
-            // 4. Generate code via LLM
-            indicator.setText2("Generating test code...");
-            LLMGateway llmGateway = LLMAdapterFactory.create(settings);
-            TestCodeGenerator generator = new TestCodeGenerator(llmGateway, settings);
+            // 3. Построение промпта
+            ITestCodeGenerator generator = isIntegrationTest
+                    ? new TestCodeGenerator(LLMAdapterFactory.create(settings), settings)
+                    : new UnitTestCodeGenerator(LLMAdapterFactory.create(settings), settings);
 
+            String prompt = generator.buildPrompt(context, testCases, settings);
 
-//            // 5. Self-correction
-//            indicator.setText2("Validating and fixing code...");
-//            DiagnosticFixer fixer = new DiagnosticFixer(
-//                    project, llmGateway, settings.getMaxRepairAttempts());
-//            String fixedCode = fixer.fixErrors(rawCode);
-//
-//            // 6. Write to file
-//            indicator.setText2("Writing test file...");
-//            TestFileWriter writer = new TestFileWriter(project);
-//            String outputPath = writer.writeTestFile(fixedCode, context);
+            // 4. Показ диалога с возможностью редактирования промпта и последующей генерации
+            return showPreviewDialog(context, prompt, testCases, generator);
 
-            return showPreviewDialog(context, generator, testCases, new PromptBuilder().buildPrompt(context, testCases, settings));
-
-        } catch (LLMGateway.LLMException e) {
-            throw new GenerationException("Generation failed: " + e.getMessage(), e);
+        } catch (Exception e) {
+            throw new GenerationException("Preparation failed: " + e.getMessage(), e);
         }
     }
 
-    private @NotNull MethodContext prepareMethodContext(@NotNull PsiMethod method, ProgressIndicator indicator) {
+    @NotNull
+    private MethodContext prepareMethodContext(@NotNull PsiMethod method, ProgressIndicator indicator) {
         indicator.setText2("Extracting key tokens...");
         KeyTokenExtractor tokenExtractor = new KeyTokenExtractor();
         var keyTokens = tokenExtractor.extract(method);
 
-        // 2. Retrieve context
         indicator.setText2("Retrieving context...");
-//            ContextRetriever contextRetriever = new ContextRetriever(settings.getContextDepth());
-
         EnhancedContextRetriever contextRetriever = new EnhancedContextRetriever(
                 project,
                 settings.getContextDepth(),
-                150  // Увеличили лимит узлов для анализа реализаций
+                150
         );
 
         indicator.setText2("Analyzing DTOs...");
@@ -114,55 +100,61 @@ public class LspragPluginCore {
 
     @NotNull
     private GenerationResult showPreviewDialog(@NotNull MethodContext context,
-                                               @Nullable ITestCodeGenerator generator,
+                                               @NotNull String initialPrompt,
                                                @Nullable List<TestCase> testCases,
-                                               @NotNull String prompt) {
+                                               ITestCodeGenerator generator) {
 
         AtomicReference<GenerationResult> resultRef = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
 
-        GeneratedTestData testData = generator.generateTestData(project, context, testCases);
-
-        // Создаём и показываем диалог в EDT
-        com.intellij.openapi.application.ApplicationManager.getApplication()
-                .invokeAndWait(() -> {
-                    LLMResponseDialog dialog = new LLMResponseDialog(
-                            project,
-                            prompt,
-                            testData.getRawResponse(),
-                            testData.getJavaCode(),
-                            testCases,
-                            (finalCode) -> {
-
-                            }
-                    );
-
-                    dialog.setRegenerateAction(() -> ProgressManager.getInstance().run(new Task.Backgroundable(project, "Regenerating...", true) {
-                        @Override
-                        public void run(@NotNull ProgressIndicator indicator) {
-                            try {
-                                GeneratedTestData newData = generator.generateTestData(project, context, testCases);
-                                ApplicationManager.getApplication().invokeLater(() ->
-                                        dialog.updateContent(prompt, newData.getRawResponse(), newData.getJavaCode())
-                                );
-                            } catch (Exception e) {
-                                ApplicationManager.getApplication().invokeLater(() ->
-                                        NotificationUtils.showError(project, "Regeneration failed: " + e.getMessage())
-                                );
-                                dialog.close(DialogWrapper.CANCEL_EXIT_CODE);
-                            }
-                        }
-                    }));
-                    // Показываем диалог модально
-                    boolean accepted = dialog.showAndGet();
-
-                    if (!accepted && resultRef.get() == null) {
-                        resultRef.set(GenerationResult.failure("User cancelled"));
+        // Показываем диалог
+        ApplicationManager.getApplication().invokeAndWait(() -> {
+            LLMResponseDialog dialog = new LLMResponseDialog(
+                    project,
+                    initialPrompt,
+                    testCases,
+                    null,
+                    (finalCode) -> {
+                        // Apply action: пользователь нажал "Apply", код сохранён или записан
+                        resultRef.set(GenerationResult.success(finalCode, ""));
                         latch.countDown();
                     }
-                });
+            );
 
-        // Ждём ответа пользователя (с таймаутом)
+            Consumer<String> generationCallback = (finalPrompt) -> {
+                // Запускаем генерацию в фоне
+                ProgressManager.getInstance().run(new Task.Backgroundable(project, "Generating test code...", true) {
+                    @Override
+                    public void run(@NotNull ProgressIndicator indicator) {
+                        try {
+                            GeneratedTestData testData = generator.generateTestData(project, context, testCases, finalPrompt);
+                            // Обновляем диалог с результатом
+                            ApplicationManager.getApplication().invokeLater(() -> {
+                                dialog.updateGeneratedCode(testData.getJavaCode());
+                                dialog.updateTestCases(testData.getRawResponse());
+                            });
+                            resultRef.set(GenerationResult.success(testData.getJavaCode(), ""));
+                            latch.countDown();
+                        } catch (Exception e) {
+                            dialog.updateGeneratedCode(e.getMessage());
+                            dialog.updateTestCases(e.getMessage());
+                            ApplicationManager.getApplication().invokeLater(() ->
+                                    NotificationUtils.showError(project, "Generation failed: " + e.getMessage())
+                            );
+                            resultRef.set(GenerationResult.failure(e.getMessage()));
+                            latch.countDown();
+                        }
+                    }
+                });
+            };
+
+            dialog.setGenerateCallback(generationCallback);
+
+            dialog.show();
+            // Если диалог закрыт без генерации, то не будет latch.countDown()
+            // Нужно обработать закрытие диалога. Проще всего добавить в диалог обработчик закрытия.
+        });
+
         try {
             if (!latch.await(5, TimeUnit.MINUTES)) {
                 return GenerationResult.failure("Dialog timeout");
@@ -177,13 +169,6 @@ public class LspragPluginCore {
     }
 
     public GenerationResult generateUnitTestForMethod(PsiMethod method, ProgressIndicator indicator) throws GenerationException {
-        try {
-            MethodContext context = prepareMethodContext(method, indicator);
-            LLMGateway llmGateway = LLMAdapterFactory.create(settings);
-            UnitTestCodeGenerator generator = new UnitTestCodeGenerator(llmGateway, settings);
-            return showPreviewDialog(context, generator, null, generator.buildPrompt(context, null, settings));
-        } catch (LLMGateway.LLMException e) {
-            throw new GenerationException("Generation failed: " + e.getMessage(), e);
-        }
+        return generateTestForMethod(method, indicator, false);
     }
 }

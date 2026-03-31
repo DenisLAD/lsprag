@@ -10,19 +10,14 @@ import java.util.Map;
 public class MethodContext {
     private final PsiMethod targetMethod;
     private final List<KeyToken> keyTokens;
-    private final Map<String, MethodInfo> calledMethods; // signature -> info
+    private final Map<String, MethodInfo> calledMethods;
     private final int depth;
-    private final List<DTOInfo> requestDTOs;      // НОВОЕ: DTO запросов
-    private final List<DTOInfo> responseDTOs;     // НОВОЕ: DTO ответов
+    private final List<DTOInfo> requestDTOs;
+    private final List<DTOInfo> responseDTOs;
 
     public MethodContext(PsiMethod targetMethod, List<KeyToken> keyTokens,
                          Map<String, MethodInfo> calledMethods, int depth) {
-        this.targetMethod = targetMethod;
-        this.keyTokens = keyTokens;
-        this.calledMethods = calledMethods;
-        this.depth = depth;
-        this.requestDTOs = new ArrayList<>();
-        this.responseDTOs = new ArrayList<>();
+        this(targetMethod, keyTokens, calledMethods, depth, new ArrayList<>(), new ArrayList<>());
     }
 
     public MethodContext(PsiMethod targetMethod, List<KeyToken> keyTokens,
@@ -36,16 +31,7 @@ public class MethodContext {
         this.responseDTOs = responseDTOs != null ? responseDTOs : new ArrayList<>();
     }
 
-    // Геттеры
-    public List<DTOInfo> getRequestDTOs() {
-        return requestDTOs;
-    }
-
-    public List<DTOInfo> getResponseDTOs() {
-        return responseDTOs;
-    }
-
-
+    // геттеры
     public PsiMethod getTargetMethod() {
         return targetMethod;
     }
@@ -62,15 +48,22 @@ public class MethodContext {
         return depth;
     }
 
+    public List<DTOInfo> getRequestDTOs() {
+        return requestDTOs;
+    }
+
+    public List<DTOInfo> getResponseDTOs() {
+        return responseDTOs;
+    }
+
     public static class MethodInfo {
         private final String signature;
         private final String returnType;
         private final List<String> parameters;
         private final List<String> thrownExceptions;
         private final String bodySnippet;
-        private final String returnTypeAnalysis;  // НОВОЕ ПОЛЕ
+        private final String returnTypeAnalysis;
 
-        // Новый конструктор с returnTypeAnalysis
         public MethodInfo(String signature, String returnType,
                           List<String> parameters, List<String> thrownExceptions,
                           String bodySnippet, String returnTypeAnalysis) {
@@ -82,15 +75,10 @@ public class MethodContext {
             this.returnTypeAnalysis = returnTypeAnalysis;
         }
 
-        // Старый конструктор для обратной совместимости
         public MethodInfo(String signature, String returnType,
                           List<String> parameters, List<String> thrownExceptions,
                           String bodySnippet) {
             this(signature, returnType, parameters, thrownExceptions, bodySnippet, null);
-        }
-
-        public String getReturnTypeAnalysis() {
-            return returnTypeAnalysis;
         }
 
         public String getSignature() {
@@ -111,6 +99,10 @@ public class MethodContext {
 
         public String getBodySnippet() {
             return bodySnippet;
+        }
+
+        public String getReturnTypeAnalysis() {
+            return returnTypeAnalysis;
         }
     }
 
@@ -151,12 +143,15 @@ public class MethodContext {
             private final String name;
             private final String typeName;
             private final List<String> annotations;
+            private final Map<String, Object> validationConstraints; // NEW
             private final boolean nullable;
 
-            public FieldInfo(String name, String typeName, List<String> annotations, boolean nullable) {
+            public FieldInfo(String name, String typeName, List<String> annotations,
+                             Map<String, Object> validationConstraints, boolean nullable) {
                 this.name = name;
                 this.typeName = typeName;
                 this.annotations = annotations;
+                this.validationConstraints = validationConstraints;
                 this.nullable = nullable;
             }
 
@@ -171,6 +166,10 @@ public class MethodContext {
             public List<String> getAnnotations() {
                 return annotations;
             }
+
+            public Map<String, Object> getValidationConstraints() {
+                return validationConstraints;
+            } // NEW
 
             public boolean isNullable() {
                 return nullable;

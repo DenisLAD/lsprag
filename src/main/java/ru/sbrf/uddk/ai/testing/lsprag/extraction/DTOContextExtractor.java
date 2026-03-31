@@ -416,18 +416,11 @@ public class DTOContextExtractor {
     /**
      * Конвертирует DTOAnalyzer.DTOInfo в MethodContext.DTOInfo
      */
-    @NotNull
     private MethodContext.DTOInfo convertToContextDTO(@NotNull DTOAnalyzer.DTOInfo dtoInfo,
                                                       @NotNull String jsonExample) {
-        // Проверяем, нужно ли пропустить этот класс
         if (SKIP_CLASSES.contains(dtoInfo.getName().toLowerCase())) {
-            // Возвращаем пустой DTOInfo, который будет проигнорирован
-            return new MethodContext.DTOInfo(
-                    dtoInfo.getName(),
-                    dtoInfo.getCategory(),
-                    new ArrayList<>(),
-                    jsonExample
-            );
+            return new MethodContext.DTOInfo(dtoInfo.getName(), dtoInfo.getCategory(),
+                    new ArrayList<>(), jsonExample);
         }
 
         return new MethodContext.DTOInfo(
@@ -438,6 +431,7 @@ public class DTOContextExtractor {
                                 f.getName(),
                                 f.getTypeName(),
                                 f.getAnnotations(),
+                                f.getValidationConstraints(), // NEW
                                 f.isNullable()
                         ))
                         .collect(Collectors.toList()),

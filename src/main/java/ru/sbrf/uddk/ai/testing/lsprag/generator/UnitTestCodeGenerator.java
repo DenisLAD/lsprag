@@ -14,6 +14,8 @@ import ru.sbrf.uddk.ai.testing.lsprag.utils.LLMResponseParser;
 import java.io.IOException;
 import java.util.List;
 
+import static ru.sbrf.uddk.ai.testing.lsprag.generator.TestCodeGenerator.buildFixPrompt;
+
 public class UnitTestCodeGenerator implements ITestCodeGenerator {
 
     private final LLMGateway llmGateway;
@@ -21,38 +23,38 @@ public class UnitTestCodeGenerator implements ITestCodeGenerator {
 
     private static final String SYSTEM_CODE = """
             Ты — опытный Java разработчик, специализирующийся на написании UnitTestов для Spring Boot приложений.
-            
+                        
             ### Стек технологий:
             - Java 17
             - Spring Boot 2.x/3.x
             - JUnit 5 (Jupiter)
             - AssertJ для fluent assertions
-            
+                        
             ### Требования к коду:
             1. **Импорты:** Все необходимые импорты должны быть включены, включая статические:
                - `import static org.assertj.core.api.Assertions.assertThat;`
                - `import static org.hamcrest.Matchers.*;`
-            
+                        
             2. **Аннотации:**
                - Использовать `@SpringBootTest`
                - Добавить `@AutoConfigureMockMvc` для тестирования контроллеров если требуется
                - Использовать `@MockBean` для мокирования внешних зависимостей, а также подготовить ожидаемые моки методов
                - Добавить `@TestPropertySource` при необходимости переопределения свойств
-            
+                        
             3. **Методы тестов:**
                - Каждый тест должен быть изолирован и независим
                - Использовать понятные имена в формате `methodName_Scenario_ExpectedResult`
                - Добавлять `@DisplayName` с описанием на русском или английском
                - Использовать `@Order` для управления порядком выполнения при необходимости
-            
+                        
             4. **Валидация ответов:**
                - Для сложных проверок применять `assertThat()` из AssertJ
-            
+                        
             5. **Работа с данными:**
                - Генерировать тестовые данные через билдеры или фабричные методы
                - Очищать тестовые данные в `@AfterEach` или использовать `@Transactional`
                - Для UUID использовать `UUID.randomUUID().toString()`
-            
+                        
             ### Формат ответа:
             Верни только Java код тестового класса, без markdown-обертки (без ```java), без пояснений.
             Код должен быть готов к компиляции и запуску.
@@ -60,10 +62,10 @@ public class UnitTestCodeGenerator implements ITestCodeGenerator {
 
     private static final String SYSTEM_PROMPT = """
             Ты — опытный UnitTest инженер, специализирующийся на тестировании Spring Boot приложениях.
-            
+                        
             ### Твоя задача:
             Создать детальные тест-кейсы для конкретного кода.
-            
+                        
             ### Требования к тест-кейсам:
             1. Каждый тест-кейс должен содержать:
                - Уникальное название
@@ -71,22 +73,22 @@ public class UnitTestCodeGenerator implements ITestCodeGenerator {
                - Шаги с конкретными проверками
                - Ожидаемый результат (все проверки должны быть явно перечислены)
                - Постусловия (пример: очистка тестовых данных)
-            
+                        
             2. Для случая проверять:
                - Покрытие ветвления с разными данными
                - Структуру тела ответа и результат
                - Ключевые поля и их значения
-            
+                        
             4. Генерировать реалистичные тестовые данные:
                - Использовать осмысленные значения (не "test", "123")
                - Для дат использовать формат ISO 8601
                - Для ID использовать UUID или числовые значения
                - Учитывать бизнес-логику
-            
+                        
             ### Формат ответа:
             Предоставь тест-кейс в структурированном виде с использованием markdown.
             Не добавляй пояснений вне структуры тест-кейса.
-            
+                        
             """;
 
     public UnitTestCodeGenerator(@NotNull LLMGateway llmGateway,
@@ -128,6 +130,18 @@ public class UnitTestCodeGenerator implements ITestCodeGenerator {
         }
 
         return LLMResponseParser.extractJavaCode(fixedCode);
+    }
+
+    @Override
+    public GeneratedTestData generateTestData(@NotNull Project project, @NotNull MethodContext context, @Nullable List<TestCase> testCases, @NotNull String prompt) {
+        String rawResponse = null;
+        try {
+            rawResponse = llmGateway.generate(prompt);
+        } catch (IOException e) {
+            throw new LLMGateway.LLMException("Ошибка генерации", e);
+        }
+
+        return new GeneratedTestData(rawResponse, generateTestClass(project, context, rawResponse));
     }
 
     @NotNull
@@ -196,7 +210,7 @@ public class UnitTestCodeGenerator implements ITestCodeGenerator {
                           @NotNull List<String> errors)
             throws IOException, LLMGateway.LLMException {
 
-        String fixPrompt = PromptBuilder.buildFixPrompt(brokenCode, errors);
+        String fixPrompt = buildFixPrompt(brokenCode, errors);
         String rawResponse = llmGateway.generate(fixPrompt);
 
         return LLMResponseParser.extractJavaCode(rawResponse);
@@ -228,7 +242,7 @@ public class UnitTestCodeGenerator implements ITestCodeGenerator {
         prompt.append("""
                 ### Генерация тестовых данных
                 - Для полей с аннотациями валидации (@NotNull, @Size, @Pattern) учитывай ограничения
-                
+                                
                 ### Очистка данных
                 - Всегда предусматривай постусловия для удаления созданных данных
                 - Используй @AfterEach для гарантированной очистки

@@ -4,12 +4,15 @@ import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiCodeBlock;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiField;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiMethod;
 import com.intellij.psi.PsiMethodCallExpression;
 import com.intellij.psi.PsiPolyVariantReference;
+import com.intellij.psi.PsiReturnStatement;
+import com.intellij.psi.PsiStatement;
 import com.intellij.psi.PsiType;
 import com.intellij.psi.PsiTypes;
 import com.intellij.psi.ResolveResult;
@@ -122,6 +125,31 @@ public class EnhancedContextRetriever {
         return new MethodContext(targetMethod, keyTokens, calledMethods, maxDepth);
     }
 
+    private boolean isSignificantMethod(@NotNull PsiMethod method) {
+        return ReadAction.compute(() -> {
+            // Пропускаем абстрактные / нативные
+            if (method.getBody() == null) return false;
+
+            // Пропускаем геттеры/сеттеры (эвристика)
+            String name = method.getName();
+            if ((name.startsWith("get") || name.startsWith("set") || name.startsWith("is")) &&
+                    method.getParameterList().getParametersCount() <= 1) {
+                // но не пропускаем, если есть аннотации вроде @RequestMapping
+                if (method.getAnnotations().length == 0) return false;
+            }
+
+            // Пропускаем тривиальные методы (один return или один вызов)
+            PsiCodeBlock body = method.getBody();
+            if (body != null) {
+                String text = body.getText();
+                if (text.matches("\\{\\s*return\\s+[^;]+;\\s*\\}")) return false;
+                PsiStatement[] statements = body.getStatements();
+                if (statements.length == 1 && statements[0] instanceof PsiReturnStatement) return false;
+            }
+            return true;
+        });
+    }
+
     /**
      * Основная логика с поддержкой интерфейсов
      */
@@ -158,11 +186,15 @@ public class EnhancedContextRetriever {
                     addImplementationToMethods(primary, methods, visited, interfaceContexts, currentDepth);
                 } else {
                     // Если реализаций нет, добавляем сам интерфейс
-                    addMethodToMethods(method, methods, visited);
+                    if (isSignificantMethod(method)) {
+                        addMethodToMethods(method, methods, visited);
+                    }
                 }
             } else {
                 // Обычный метод с реализацией
+                if (isSignificantMethod(method)) {
                 addMethodToMethods(method, methods, visited);
+                }
 
                 // Рекурсивный анализ
                 if (currentDepth < maxDepth && nodeCounter < maxTotalNodes && method.getBody() != null) {
@@ -251,6 +283,8 @@ public class EnhancedContextRetriever {
         ReadAction.run(() -> {
             PsiMethod method = info.getImplementingMethod();
 
+            if (!isSignificantMethod(method)) return;
+
             // Проверка на повторное посещение
             if (visited.contains(method)) {
                 return;
@@ -325,6 +359,8 @@ public class EnhancedContextRetriever {
                 return;
             }
             visited.add(method);
+
+            if (!isSignificantMethod(method)) return;
 
             String signature = PsiUtils.getUniqueMethodSignature(method);
             if (methods.containsKey(signature)) {

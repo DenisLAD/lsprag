@@ -1,20 +1,37 @@
 package ru.sbrf.uddk.ai.testing.lsprag.analysis;
 
 import com.intellij.openapi.application.ReadAction;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiAnnotation;
+import com.intellij.psi.PsiAnnotationMemberValue;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiField;
+import com.intellij.psi.PsiLiteralExpression;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiModifier;
+import com.intellij.psi.PsiModifierListOwner;
+import com.intellij.psi.PsiType;
 import com.intellij.psi.util.PropertyUtilBase;
 import org.jetbrains.annotations.NotNull;
 import ru.sbrf.uddk.ai.testing.lsprag.utils.PropertyUtilBaseHelper;
 import ru.sbrf.uddk.ai.testing.lsprag.utils.PsiUtils;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static ru.sbrf.uddk.ai.testing.lsprag.utils.PsiUtils.isPrimitiveOrWrapper;
 
 public class DTOAnalyzer {
 
-    // Хранилище для всех найденных DTO, чтобы избежать повторного анализа
     private final Map<String, DTOInfo> analyzedDTOs = new HashMap<>();
     private final List<DTOInfo> allNestedDTOs = new ArrayList<>();
 
@@ -25,12 +42,9 @@ public class DTOAnalyzer {
 
         return ReadAction.compute(() -> {
             DTOInfo rootInfo = analyzeInternal(type, new HashSet<>());
-
-            // Добавляем все найденные вложенные DTO в корневой объект
             if (rootInfo != null) {
                 rootInfo.getAllNestedDTOs().addAll(allNestedDTOs);
             }
-
             return rootInfo;
         });
     }
@@ -48,47 +62,35 @@ public class DTOAnalyzer {
 
         String className = psiClass.getQualifiedName();
 
-        // Пропускаем java.* пакеты
         if (shouldSkipJavaClass(className)) {
             return new DTOInfo(psiClass.getName(), "java-class", Collections.emptyList(), new ArrayList<>());
         }
 
-        // Проверяем, не анализировали ли мы уже этот класс
         String cacheKey = psiClass.getQualifiedName();
         if (analyzedDTOs.containsKey(cacheKey)) {
             return analyzedDTOs.get(cacheKey);
         }
 
-        // Проверяем на циклические зависимости
         if (processingStack.contains(cacheKey)) {
             return new DTOInfo(psiClass.getName(), "cyclic", Collections.emptyList(), new ArrayList<>());
         }
 
         processingStack.add(cacheKey);
 
-        // Определяем тип: DTO, Entity, Record, etc.
         String category = classifyClass(psiClass);
-
-        // Если это не DTO-подобный класс, не анализируем его поля глубоко
         boolean isDTOLike = isDTOLikeClass(psiClass, category);
-
-        // Извлекаем поля
         List<FieldInfo> fields = extractFields(psiClass, processingStack, isDTOLike);
 
         DTOInfo dtoInfo = new DTOInfo(psiClass.getName(), category, fields, new ArrayList<>());
 
-        // Сохраняем в кэш
         if (isDTOLike) {
             analyzedDTOs.put(cacheKey, dtoInfo);
-
-            // Добавляем в общий список всех вложенных DTO
             if (!allNestedDTOs.contains(dtoInfo)) {
                 allNestedDTOs.add(dtoInfo);
             }
         }
 
         processingStack.remove(cacheKey);
-
         return dtoInfo;
     }
 
@@ -131,7 +133,6 @@ public class DTOAnalyzer {
             return "entity";
         }
 
-        // Простой эвристический анализ: если есть только геттеры/сеттеры и нет бизнес-методов
         if (hasOnlyAccessors(psiClass)) {
             return "dto";
         }
@@ -143,49 +144,51 @@ public class DTOAnalyzer {
     private List<FieldInfo> extractFields(@NotNull PsiClass psiClass, Set<String> processingStack, boolean analyzeNested) {
         List<FieldInfo> fields = new ArrayList<>();
 
-        // Поля класса
         for (PsiField field : psiClass.getFields()) {
             if (field.hasModifierProperty(PsiModifier.STATIC) ||
                     field.hasModifierProperty(PsiModifier.FINAL) && field.getInitializer() != null) {
-                continue; // пропускаем константы
+                continue;
             }
 
             PsiType fieldType = field.getType();
             DTOInfo nestedInfo = null;
 
-            // Анализируем вложенный тип только если это DTO-подобный класс и мы должны анализировать
             if (analyzeNested && shouldAnalyzeNestedType(fieldType)) {
                 nestedInfo = analyzeNestedType(fieldType, processingStack);
             }
+
+
+            Map<String, Object> validationConstraints = extractValidationConstraints(field);
 
             FieldInfo info = new FieldInfo(
                     field.getName(),
                     fieldType.getPresentableText(),
                     fieldType,
                     extractAnnotations(field),
+                    validationConstraints,
                     isNullable(field),
                     nestedInfo
             );
             fields.add(info);
         }
 
-        // Свойства через геттеры (для случаев без явных полей)
         for (PsiMethod getter : PropertyUtilBaseHelper.getAllGetters(psiClass)) {
             String propName = PropertyUtilBase.getPropertyName(getter);
             if (propName != null && fields.stream().noneMatch(f -> f.getName().equals(propName))) {
                 PsiType returnType = getter.getReturnType();
                 if (returnType != null) {
                     DTOInfo nestedInfo = null;
-
                     if (analyzeNested && shouldAnalyzeNestedType(returnType)) {
                         nestedInfo = analyzeNestedType(returnType, processingStack);
                     }
 
+                    Map<String, Object> validationConstraints = extractValidationConstraints(getter);
                     FieldInfo info = new FieldInfo(
                             propName,
                             returnType.getPresentableText(),
                             returnType,
                             extractAnnotations(getter),
+                            validationConstraints,
                             !isPrimitiveOrWrapper(returnType),
                             nestedInfo
                     );
@@ -197,25 +200,54 @@ public class DTOAnalyzer {
         return fields;
     }
 
-    private boolean shouldAnalyzeNestedType(PsiType type) {
-        if (isPrimitiveOrWrapper(type)) {
-            return false;
+    @NotNull
+    private Map<String, Object> extractValidationConstraints(PsiModifierListOwner owner) {
+        Map<String, Object> constraints = new HashMap<>();
+        for (PsiAnnotation ann : owner.getAnnotations()) {
+            String qn = ann.getQualifiedName();
+            if (qn == null) continue;
+
+            if (qn.contains("NotNull") || qn.contains("NotBlank")) {
+                constraints.put("required", true);
+            }
+            if (qn.contains("Size")) {
+                Map<String, Integer> size = new HashMap<>();
+                PsiAnnotationMemberValue minValue = ann.findAttributeValue("min");
+                PsiAnnotationMemberValue maxValue = ann.findAttributeValue("max");
+                if (minValue instanceof PsiLiteralExpression minLit && minLit.getValue() instanceof Integer min) {
+                    size.put("min", min);
+                }
+                if (maxValue instanceof PsiLiteralExpression maxLit && maxLit.getValue() instanceof Integer max) {
+                    size.put("max", max);
+                }
+                constraints.put("size", size);
+            }
+            if (qn.contains("Email")) {
+                constraints.put("pattern", "email");
+            }
+            if (qn.contains("Pattern")) {
+                PsiAnnotationMemberValue regexp = ann.findAttributeValue("regexp");
+                if (regexp instanceof PsiLiteralExpression lit && lit.getValue() != null) {
+                    constraints.put("regex", lit.getValue().toString());
+                }
+            }
+            // можно добавить @Min, @Max, @DecimalMin и т.д.
         }
+        return constraints;
+    }
 
-        // Извлекаем реальный тип из Generic
+    private boolean shouldAnalyzeNestedType(PsiType type) {
+        if (isPrimitiveOrWrapper(type)) return false;
         PsiType realType = extractRealTypeFromGenerics(type);
-
         if (realType instanceof PsiClassType classType) {
             PsiClass psiClass = classType.resolve();
             if (psiClass != null) {
                 String className = psiClass.getQualifiedName();
-                // Не анализируем классы из java.* пакетов
                 return !shouldSkipJavaClass(className) &&
                         !isPrimitiveOrWrapper(realType) &&
                         !isCollectionType(realType);
             }
         }
-
         return false;
     }
 
@@ -223,8 +255,6 @@ public class DTOAnalyzer {
     private PsiType extractRealTypeFromGenerics(PsiType type) {
         if (type instanceof PsiClassType classType) {
             PsiType[] parameters = classType.getParameters();
-
-            // Если это коллекция или Optional, извлекаем параметр типа
             if (parameters.length > 0 && isCollectionOrOptional(classType)) {
                 return extractRealTypeFromGenerics(parameters[0]);
             }
@@ -252,13 +282,10 @@ public class DTOAnalyzer {
 
     @NotNull
     private DTOInfo analyzeNestedType(PsiType type, Set<String> processingStack) {
-        // Извлекаем реальный тип из Generic
         PsiType realType = extractRealTypeFromGenerics(type);
-
         if (realType instanceof PsiClassType) {
             return analyzeInternal(realType, processingStack);
         }
-
         return new DTOInfo(type.getPresentableText(), "unknown", Collections.emptyList(), new ArrayList<>());
     }
 
@@ -288,36 +315,44 @@ public class DTOAnalyzer {
         return methodCount > 0 && methodCount == accessorCount;
     }
 
-    /**
-     * Генерация примера JSON для промпта
-     */
     @NotNull
     public String generateJsonExample(@NotNull DTOInfo dto, int depth) {
         if (depth <= 0) return "\"...\"";
-
         StringBuilder json = new StringBuilder("{");
         boolean first = true;
-
         for (FieldInfo field : dto.getFields()) {
             if (!first) json.append(",");
             first = false;
-
             json.append("\"").append(field.getName()).append("\":");
             json.append(generateValueExample(field, depth - 1));
         }
-
         json.append("}");
         return json.toString();
     }
 
     @NotNull
     private String generateValueExample(@NotNull FieldInfo field, int depth) {
-        String type = field.getTypeName().toLowerCase();
-
-        if (type.contains("string")) {
-            return field.getAnnotations().stream().anyMatch(a -> a.contains("Email"))
-                    ? "\"user@example.com\"" : "\"example\"";
+        Map<String, Object> constraints = field.getValidationConstraints();
+        if (constraints.containsKey("required") && !Boolean.TRUE.equals(constraints.get("required"))) {
+            return "null";
         }
+        if ("email".equals(constraints.get("pattern"))) {
+            return "\"user@example.com\"";
+        }
+        if (constraints.containsKey("size")) {
+            Map<String, Integer> size = (Map<String, Integer>) constraints.get("size");
+            int min = size.getOrDefault("min", 1);
+            int max = size.getOrDefault("max", 10);
+            int length = (min + max) / 2;
+            return "\"" + "a".repeat(Math.max(1, length)) + "\"";
+        }
+        if (constraints.containsKey("regex")) {
+            // для простоты генерируем строку, подходящую под regex (сложно)
+            return "\"sample\"";
+        }
+
+        String type = field.getTypeName().toLowerCase();
+        if (type.contains("string")) return "\"example\"";
         if (type.contains("integer") || type.contains("long")) return "123";
         if (type.contains("boolean")) return "true";
         if (type.contains("double") || type.contains("float")) return "123.45";
@@ -327,12 +362,9 @@ public class DTOAnalyzer {
         if (type.contains("uuid")) return "\"" + UUID.randomUUID() + "\"";
         if (type.contains("localdate")) return "\"2001-01-01\"";
         if (type.contains("localdatetime")) return "\"2001-01-01T00:00:00\"";
-
-        // Вложенный DTO
         if (field.getNestedInfo() != null && depth > 0) {
             return generateJsonExample(field.getNestedInfo(), depth);
         }
-
         return field.isNullable() ? "null" : "\"value\"";
     }
 
@@ -369,8 +401,7 @@ public class DTOAnalyzer {
 
         @Override
         public String toString() {
-            return String.format("%s{%s, fields=%d, nestedDTOs=%d}",
-                    name, category, fields.size(), allNestedDTOs.size());
+            return String.format("%s{%s, fields=%d, nestedDTOs=%d}", name, category, fields.size(), allNestedDTOs.size());
         }
     }
 
@@ -379,15 +410,18 @@ public class DTOAnalyzer {
         private final String typeName;
         private final PsiType type;
         private final List<String> annotations;
+        private final Map<String, Object> validationConstraints;
         private final boolean nullable;
         private final DTOInfo nestedInfo;
 
         public FieldInfo(String name, String typeName, PsiType type,
-                         List<String> annotations, boolean nullable, DTOInfo nestedInfo) {
+                         List<String> annotations, Map<String, Object> validationConstraints,
+                         boolean nullable, DTOInfo nestedInfo) {
             this.name = name;
             this.typeName = typeName;
             this.type = type;
             this.annotations = annotations;
+            this.validationConstraints = validationConstraints;
             this.nullable = nullable;
             this.nestedInfo = nestedInfo;
         }
@@ -410,6 +444,10 @@ public class DTOAnalyzer {
 
         public List<String> getAnnotations() {
             return annotations;
+        }
+
+        public Map<String, Object> getValidationConstraints() {
+            return validationConstraints;
         }
 
         public boolean isNullable() {

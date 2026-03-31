@@ -1,10 +1,18 @@
 package ru.sbrf.uddk.ai.testing.lsprag.generator;
 
 import com.intellij.openapi.application.ReadAction;
+import com.intellij.psi.PsiAnnotation;
+import com.intellij.psi.PsiAnnotationMemberValue;
+import com.intellij.psi.PsiIfStatement;
 import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiReferenceExpression;
+import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import ru.sbrf.uddk.ai.testing.lsprag.context.MethodContext;
 
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public class PromptContextBuilder {
@@ -15,6 +23,38 @@ public class PromptContextBuilder {
 
         prompt.append("## ИСХОДНЫЙ КОД МЕТОДА ДЛЯ ТЕСТА\n");
         prompt.append(formatMethodInfo(context.getTargetMethod())).append("\n\n");
+
+        String httpMethod = detectHttpMethod(context.getTargetMethod());
+        if (!"UNKNOWN".equals(httpMethod)) {
+            prompt.append("## ТИП ЭНДПОИНТА: ").append(httpMethod).append("\n");
+            switch (httpMethod) {
+                case "POST":
+                    prompt.append("Для POST-эндпоинтов обязательно проверять:\n");
+                    prompt.append("- Статус 201 Created\n");
+                    prompt.append("- Заголовок Location с URL созданного ресурса\n");
+                    prompt.append("- Возврат созданного объекта с id\n");
+                    break;
+                case "GET":
+                    prompt.append("Для GET-эндпоинтов проверять:\n");
+                    prompt.append("- Корректный ответ для существующего ресурса (200 OK)\n");
+                    prompt.append("- Обработку несуществующего ресурса (404 Not Found)\n");
+                    break;
+                case "PUT":
+                case "PATCH":
+                    prompt.append("Для методов обновления проверять:\n");
+                    prompt.append("- Обновление существующего ресурса (200 OK)\n");
+                    prompt.append("- Попытку обновления несуществующего ресурса (404 Not Found)\n");
+                    prompt.append("- Валидацию входных данных (400 Bad Request)\n");
+                    break;
+                case "DELETE":
+                    prompt.append("Для DELETE-эндпоинтов проверять:\n");
+                    prompt.append("- Удаление существующего ресурса (204 No Content или 200 OK)\n");
+                    prompt.append("- Повторное удаление (404 Not Found)\n");
+                    break;
+            }
+        }
+        prompt.append(analyzeControlFlow(context.getTargetMethod())).append("\n");
+
 
         // 3. Контекст вызываемых методов
         if (!context.getCalledMethods().isEmpty()) {
@@ -32,6 +72,54 @@ public class PromptContextBuilder {
 
 
         return prompt.toString();
+    }
+
+    private static String detectHttpMethod(PsiMethod method) {
+        return ReadAction.compute(() -> {
+            for (PsiAnnotation ann : method.getAnnotations()) {
+                String qn = ann.getQualifiedName();
+                if (qn == null) continue;
+                if (qn.contains("GetMapping")) return "GET";
+                if (qn.contains("PostMapping")) return "POST";
+                if (qn.contains("PutMapping")) return "PUT";
+                if (qn.contains("DeleteMapping")) return "DELETE";
+                if (qn.contains("PatchMapping")) return "PATCH";
+                if (qn.contains("RequestMapping")) {
+                    PsiAnnotationMemberValue methodAttr = ann.findAttributeValue("method");
+                    if (methodAttr instanceof PsiReferenceExpression ref) {
+                        String refName = ref.getReferenceName();
+                        if (refName != null) {
+                            if (refName.equals("GET")) return "GET";
+                            if (refName.equals("POST")) return "POST";
+                            if (refName.equals("PUT")) return "PUT";
+                            if (refName.equals("DELETE")) return "DELETE";
+                        }
+                    }
+                }
+            }
+            return "UNKNOWN";
+        });
+    }
+
+    private static String analyzeControlFlow(PsiMethod method) {
+        return ReadAction.compute(() -> {
+            Set<String> conditions = new HashSet<>();
+            for (PsiIfStatement ifStmt : PsiTreeUtil.findChildrenOfType(method, PsiIfStatement.class)) {
+                String condition = ifStmt.getCondition().getText();
+                condition = condition.replaceAll("\\s+", " ").trim();
+                conditions.add(condition);
+            }
+            if (!conditions.isEmpty()) {
+                StringBuilder sb = new StringBuilder("\n### ВЕТВЛЕНИЯ В МЕТОДЕ\n");
+                sb.append("Метод содержит следующие условия:\n");
+                for (String cond : conditions) {
+                    sb.append("- `").append(cond).append("`\n");
+                }
+                sb.append("Рекомендуется создать тест-кейсы для каждой ветки.\n");
+                return sb.toString();
+            }
+            return "";
+        });
     }
 
     @NotNull
@@ -106,11 +194,25 @@ public class PromptContextBuilder {
         sb.append("**Поля:**\n");
         for (MethodContext.DTOInfo.FieldInfo field : dto.getFields()) {
             sb.append("- **").append(field.getName()).append("**: `").append(field.getTypeName()).append("`");
-
             if (!field.getAnnotations().isEmpty()) {
                 sb.append(" *Аннотации: ").append(String.join(", ", field.getAnnotations())).append("*");
             }
-
+            Map<String, Object> constraints = field.getValidationConstraints();
+            if (constraints != null && !constraints.isEmpty()) {
+                sb.append(" *Ограничения: ");
+                if (constraints.containsKey("required")) {
+                    sb.append("обязательное поле; ");
+                }
+                if (constraints.containsKey("size")) {
+                    Map<String, Integer> size = (Map<String, Integer>) constraints.get("size");
+                    if (size.containsKey("min")) sb.append("min=").append(size.get("min")).append("; ");
+                    if (size.containsKey("max")) sb.append("max=").append(size.get("max")).append("; ");
+                }
+                if (constraints.containsKey("pattern")) {
+                    sb.append("формат: ").append(constraints.get("pattern")).append("; ");
+                }
+                sb.append("*");
+            }
             if (field.isNullable()) {
                 sb.append(" (может быть null)");
             }
@@ -119,10 +221,42 @@ public class PromptContextBuilder {
         sb.append("\n");
 
         sb.append("**Пример JSON:**\n```json\n").append(dto.getJsonExample()).append("\n```\n\n");
-
         return sb.toString();
     }
 
+
+//    private static String simplifyBody(String body) {
+//        String[] lines = body.split("\n");
+//        StringBuilder result = new StringBuilder();
+//        for (String line : lines) {
+//            String trimmed = line.trim();
+//            if (trimmed.isEmpty() || trimmed.startsWith("//") || trimmed.startsWith("*")) continue;
+//            boolean keep = trimmed.matches(".*\\b(if|for|while|try|catch|throw|return|new|\\w+\\.\\w+\\(|\\w+\\s*=\\s*\\w+\\.\\w+\\().*");
+//            keep |= trimmed.matches(".*\\b(Service|Repository|Mapper|Client|Dao)\\s+\\w+\\s*=.*");
+//            keep |= trimmed.contains(".") && trimmed.contains("(") && !trimmed.startsWith("//");
+//            if (keep) {
+//                result.append(line).append("\n");
+//            }
+//        }
+//        return result.toString();
+//    }
+
+    private static String simplifyBody(String body) {
+        if (body == null) return "";
+        String[] lines = body.split("\n");
+        StringBuilder result = new StringBuilder();
+        for (String line : lines) {
+            String trimmed = line.trim();
+            // Пропускаем пустые строки
+            if (trimmed.isEmpty()) continue;
+            // Пропускаем однострочные комментарии
+            if (trimmed.startsWith("//")) continue;
+            // Пропускаем строки, состоящие только из скобок (не несут смысла)
+            if (trimmed.equals("{") || trimmed.equals("}")) continue;
+            result.append(line).append("\n");
+        }
+        return result.toString();
+    }
 
     @NotNull
     private static String formatCalledMethod(MethodContext.MethodInfo info) {
@@ -132,16 +266,15 @@ public class PromptContextBuilder {
                             **Возвращает:** `%s`
                             **Параметры:** `%s`
                             **Исключения:** %s
-                                                        
-                            ```java
+                            
                             %s
-                            ```
+                            
                             """,
                     info.getSignature(),
                     info.getReturnType(),
                     String.join(", ", info.getParameters()),
                     info.getThrownExceptions().isEmpty() ? "нет" : String.join(", ", info.getThrownExceptions()),
-                    info.getBodySnippet()
+                    simplifyBody(info.getBodySnippet())
             );
         } else {
             return String.format("""
