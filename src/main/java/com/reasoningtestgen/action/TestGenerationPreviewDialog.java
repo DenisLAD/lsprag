@@ -26,6 +26,7 @@ import com.intellij.testFramework.LightVirtualFile;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
+import com.reasoningtestgen.generator.TestFileWriter;
 import com.reasoningtestgen.llm.LLMProvider;
 import com.reasoningtestgen.llm.LLMProviderFactory;
 import com.reasoningtestgen.model.GeneratedCode;
@@ -36,6 +37,8 @@ import com.reasoningtestgen.validator.CompilationValidator;
 import com.reasoningtestgen.validator.CompilationValidator.ValidationResult;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 import java.awt.*;
@@ -46,6 +49,8 @@ import java.awt.*;
  * With syntax highlighting and error highlighting
  */
 public class TestGenerationPreviewDialog extends DialogWrapper {
+
+    private static final Logger LOG = LoggerFactory.getLogger(TestGenerationPreviewDialog.class);
 
     private final Project project;
     private final String className;
@@ -684,7 +689,8 @@ public class TestGenerationPreviewDialog extends DialogWrapper {
     }
 
     /**
-     * Save generated test using FileSaverDialog
+     * Save generated test to the appropriate test source root
+     * Uses TestFileWriter to find the correct location and create directories
      */
     private void saveGeneratedTest() {
         if (generatedCode == null || generatedCode.isEmpty()) {
@@ -692,85 +698,166 @@ public class TestGenerationPreviewDialog extends DialogWrapper {
             return;
         }
         
-        String fileName = className + "Test.java";
-        
-        try {
-            // Use IDEA's save dialog
-            FileSaverDescriptor descriptor = new FileSaverDescriptor(
-                "Save Test File",
-                "Select where to save the test file",
-                "java"
-            );
-            
-            com.intellij.openapi.fileChooser.FileSaverDialog dialog = FileChooserFactory.getInstance()
-                .createSaveFileDialog(descriptor, project);
-            
-            com.intellij.openapi.vfs.VirtualFile impliedDir = project.getBaseDir();
-            
-            // Try saving
-            try {
-                Object result = dialog.save(impliedDir, fileName);
-                
-                if (result != null) {
-                    // Use JFileChooser as fallback
-                    JFileChooser fileChooser = new JFileChooser();
-                    fileChooser.setDialogTitle("Save Test");
-                    fileChooser.setSelectedFile(new java.io.File(fileName));
+        // Run file operations in background
+        ProgressManager.getInstance().run(new Task.Backgroundable(project, "Saving Test File") {
+            @Override
+            public void run(@NotNull ProgressIndicator indicator) {
+                try {
+                    indicator.setIndeterminate(false);
+                    indicator.setText("Finding test source root...");
+                    indicator.setFraction(0.2);
                     
-                    if (fileChooser.showSaveDialog(getRootPane()) == JFileChooser.APPROVE_OPTION) {
-                        java.io.File file = fileChooser.getSelectedFile();
-                        try (java.io.FileOutputStream stream = new java.io.FileOutputStream(file)) {
-                            stream.write(generatedCode.getBytes());
+                    // Extract package from generated code
+                    String packageName = extractPackageFromCode(generatedCode);
+                    String testClassName = extractTestClassName(generatedCode);
+                    String qualifiedName = packageName.isEmpty() ? testClassName : packageName + "." + testClassName;
+                    
+                    indicator.setText("Creating test file...");
+                    indicator.setFraction(0.5);
+                    
+                    // Use TestFileWriter to save the file
+                    TestFileWriter writer = new TestFileWriter(project);
+                    TestFileWriter.WriteResult result = writer.writeTestFile(qualifiedName, generatedCode);
+                    
+                    indicator.setFraction(1.0);
+                    
+                    // Show result on EDT
+                    ApplicationManager.getApplication().invokeLater(() -> {
+                        if (result.success()) {
+                            statusLabel.setText("  ✓ Test saved: " + result.message());
+                            
+                            // Optionally ask if user wants to open the file
+                            int response = Messages.showYesNoDialog(
+                                project,
+                                "Test file created successfully!\n\n" + result.message() + "\n\nOpen the file?",
+                                "Test Saved",
+                                Messages.getQuestionIcon()
+                            );
+                            
+                            if (response == Messages.YES && result.file() != null) {
+                                // Open file in editor
+                                com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
+                                    .openFile(result.file(), true);
+                            }
+                        } else {
+                            statusLabel.setText("  ✗ Failed to save test");
+                            Messages.showErrorDialog(
+                                project,
+                                "Failed to save test file:\n\n" + result.message(),
+                                "Save Error"
+                            );
                         }
-                        
-                        VirtualFile virtualFile = LocalFileSystem.getInstance()
-                            .refreshAndFindFileByIoFile(file);
-                        if (virtualFile != null) {
-                            virtualFile.refresh(false, false);
-                        }
-                        
-                        statusLabel.setText("  ✓ Test saved to: " + file.getAbsolutePath());
-                    }
-                }
-            } catch (Exception e) {
-                // Fallback to JFileChooser
-                JFileChooser fileChooser = new JFileChooser();
-                fileChooser.setDialogTitle("Save Test");
-                fileChooser.setSelectedFile(new java.io.File(fileName));
-                
-                if (fileChooser.showSaveDialog(getRootPane()) == JFileChooser.APPROVE_OPTION) {
-                    java.io.File file = fileChooser.getSelectedFile();
-                    try (java.io.FileOutputStream stream = new java.io.FileOutputStream(file)) {
-                        stream.write(generatedCode.getBytes());
-                    }
-                    statusLabel.setText("  ✓ Test saved to: " + file.getAbsolutePath());
+                    });
+                    
+                } catch (Exception e) {
+                    LOG.error("Failed to save test", e);
+                    ApplicationManager.getApplication().invokeLater(() -> {
+                        Messages.showErrorDialog(
+                            project,
+                            "Failed to save test: " + e.getMessage(),
+                            "Error"
+                        );
+                    });
                 }
             }
-        } catch (Exception e) {
-            Messages.showErrorDialog(project, "Failed to save test: " + e.getMessage(), "Error");
+        });
+    }
+
+    /**
+     * Extract package name from generated code
+     */
+    @NotNull
+    private String extractPackageFromCode(@NotNull String code) {
+        // Look for "package xxx.yyy.zzz;"
+        String[] lines = code.split("\n");
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("package ") && trimmed.endsWith(";")) {
+                return trimmed.substring(8, trimmed.length() - 1).trim();
+            }
+            // Stop searching after imports start
+            if (trimmed.startsWith("import ")) break;
         }
+        return "";
+    }
+
+    /**
+     * Extract test class name from generated code
+     */
+    @NotNull
+    private String extractTestClassName(@NotNull String code) {
+        // Look for "class XxxTest" or "class Xxx"
+        String[] lines = code.split("\n");
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("public class ") || trimmed.startsWith("class ")) {
+                String classPart = trimmed.contains("class ") ? 
+                    trimmed.substring(trimmed.indexOf("class ") + 6) : trimmed;
+                
+                // Extract class name (before { or space)
+                String className = classPart.split("[\\s{]")[0];
+                return className;
+            }
+        }
+        
+        // Fallback to className + "Test"
+        return className + "Test";
     }
 
     /**
      * Check for compilation errors in generated code
+     * Uses RealCompilationValidator for actual compilation check
+     * MUST be called from background thread (Task.Backgroundable)
      */
     private boolean checkForCompilationErrors(String code) {
-        // Check if response is JSON instead of Java code
+        // First check: basic syntax (no threading issues)
         if (code.trim().startsWith("{") && code.contains("\"testMethods\"")) {
             System.out.println("WARNING: LLM returned JSON instead of Java code!");
-            System.out.println("Attempting to extract Java code from JSON...");
-            // The extractCodeFromResponse method will handle this
-            return true; // Has "errors" - JSON instead of Java
-        }
-        
-        // Check for TODO or placeholder comments
-        if (code.contains("TODO") || code.contains("placeholder")) {
             return true;
         }
         
-        // Check if code looks like valid Java (has class definition)
         if (!code.contains("class ") || !code.contains("{") || !code.contains("}")) {
+            System.out.println("WARNING: Code doesn't look like valid Java class");
             return true;
+        }
+        
+        // Second check: try real compilation if we have a VirtualFile
+        try {
+            // Wrap PSI operations in ReadAction
+            VirtualFile[] virtualFileHolder = new VirtualFile[1];
+            
+            com.intellij.openapi.application.ReadAction.run(() -> {
+                // Create temporary PSI file for compilation check
+                PsiFile tempFile = PsiFileFactory.getInstance(project)
+                    .createFileFromText("TempTest.java", StdFileTypes.JAVA, code);
+                
+                virtualFileHolder[0] = tempFile.getVirtualFile();
+            });
+            
+            VirtualFile virtualFile = virtualFileHolder[0];
+            if (virtualFile != null) {
+                // Use RealCompilationValidator
+                com.reasoningtestgen.validator.RealCompilationValidator validator = 
+                    new com.reasoningtestgen.validator.RealCompilationValidator(project);
+                
+                com.reasoningtestgen.validator.RealCompilationValidator.ValidationResult result = 
+                    validator.validateCompilation(virtualFile);
+                
+                if (!result.isValid()) {
+                    currentErrors = result.errors().stream()
+                        .map(e -> "Line " + e.line() + ": " + e.description())
+                        .collect(java.util.stream.Collectors.joining("\n"));
+                    System.out.println("Found " + result.errors().size() + " compilation errors");
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("Compilation check failed: " + e.getMessage());
+            // If we can't compile, fall back to basic checks
+            if (!code.contains("import ") && code.contains("class ")) {
+                currentErrors = "Missing imports";
+                return true;
+            }
         }
         
         return false;

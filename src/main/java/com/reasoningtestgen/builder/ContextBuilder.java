@@ -354,6 +354,22 @@ public class ContextBuilder {
             prompt.append("- Тестирование custom query methods\n\n");
         }
         
+        // V2: Add ParameterizedTest recommendation if multiple similar branches
+        if (shouldRecommendParameterizedTest(context)) {
+            prompt.append("\n## Рекомендация: Parameterized Tests\n");
+            prompt.append("Обнаружены повторяющиеся сценарии с разными данными.\n");
+            prompt.append("Рекомендуется использовать @ParameterizedTest с @ValueSource или @CsvSource.\n\n");
+            prompt.append("Пример:\n");
+            prompt.append("```java\n");
+            prompt.append("@ParameterizedTest\n");
+            prompt.append("@CsvSource({\n");
+            prompt.append("    'input1, expected1',\n");
+            prompt.append("    'input2, expected2'\n");
+            prompt.append("})\n");
+            prompt.append("void shouldHandleMultipleInputs(String input, String expected) { }\n");
+            prompt.append("```\n\n");
+        }
+        
         return prompt.toString();
     }
 
@@ -368,6 +384,26 @@ public class ContextBuilder {
         return parameters.stream()
             .map(p -> p.name() + ": " + p.type() + (p.nullable() ? " (nullable)" : ""))
             .collect(Collectors.joining(", "));
+    }
+
+    /**
+     * Determine if parameterized tests should be recommended
+     * Returns true if there are multiple similar branches with different values
+     */
+    private boolean shouldRecommendParameterizedTest(@NotNull MethodContext context) {
+        // Check for multiple if statements with similar patterns
+        List<CFGNode> cfgNodes = context.controlFlow().nodes();
+        
+        // Count comparison operations
+        long comparisonCount = cfgNodes.stream()
+            .filter(node -> node.condition() != null)
+            .filter(node -> node.condition().contains(">") || 
+                           node.condition().contains("<") || 
+                           node.condition().contains("=="))
+            .count();
+        
+        // If there are 3+ comparisons, recommend parameterized tests
+        return comparisonCount >= 3;
     }
 
     /**
