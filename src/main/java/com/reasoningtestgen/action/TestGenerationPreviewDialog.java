@@ -20,6 +20,7 @@ import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiFileFactory;
 import com.intellij.psi.PsiErrorElement;
@@ -50,6 +51,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 import java.awt.*;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -616,34 +618,35 @@ public class TestGenerationPreviewDialog extends DialogWrapper {
                     // Simple synchronous validation
                     hasErrors = checkForCompilationErrors(testCode);
                     
-                    if (hasErrors) {
-                        currentErrors = "Code may have compilation errors. Click Fix Errors to attempt automatic correction.";
+                    if (hasErrors && currentErrors.isEmpty()) {
+                        currentErrors = "Code validation detected potential issues. Click Fix Errors to attempt automatic correction.";
                     }
-                    
+
                     indicator.setText("Complete!");
                     indicator.setFraction(1.0);
-                    
+
                     // Update UI on EDT
                     final String finalCode = testCode;
                     final boolean errors = hasErrors;
+                    final String errorsDetail = currentErrors;
                     ApplicationManager.getApplication().invokeLater(() -> {
                         generatedCode = finalCode;
                         hasErrors = errors;
-                        
+
                         if (hasErrors) {
-                            statusLabel.setText("  ⚠ Test generated with errors! Click 'Fix Errors' to correct.");
+                            statusLabel.setText("  ⚠ Test generated with errors! (" + errorsDetail.split("\n").length + " issue(s))");
                             fixErrorsButton.setEnabled(true);
-                            highlightErrors(currentErrors);
+                            highlightErrors(errorsDetail);
                         } else {
                             statusLabel.setText("  ✓ Test generated successfully!");
                             fixErrorsButton.setEnabled(false);
                         }
-                        
+
                         progressBar.setVisible(false);
                         generateButton.setEnabled(true);
                         savePromptButton.setEnabled(true);
                         saveResultButton.setEnabled(true);
-                        
+
                         // Update result area
                         updateResultEditor(finalCode);
                     });
@@ -933,61 +936,117 @@ public class TestGenerationPreviewDialog extends DialogWrapper {
 
     /**
      * Check for compilation errors in generated code
-     * Uses RealCompilationValidator for actual compilation check
+     * Uses PSI analysis (faster and more reliable for in-memory code)
      * MUST be called from background thread (Task.Backgroundable)
      */
     private boolean checkForCompilationErrors(String code) {
-        // First check: basic syntax (no threading issues)
+        // First check: basic sanity
+        if (code == null || code.trim().isEmpty()) {
+            currentErrors = "Generated code is empty";
+            return true;
+        }
+        
+        // Check for JSON response
         if (code.trim().startsWith("{") && code.contains("\"testMethods\"")) {
             System.out.println("WARNING: LLM returned JSON instead of Java code!");
+            currentErrors = "LLM returned JSON instead of Java code";
             return true;
         }
-        
+
+        // Check for basic Java structure
         if (!code.contains("class ") || !code.contains("{") || !code.contains("}")) {
             System.out.println("WARNING: Code doesn't look like valid Java class");
+            currentErrors = "Code is missing class definition";
             return true;
         }
         
-        // Second check: try real compilation if we have a VirtualFile
+        // Check for missing imports
+        if (code.contains("@Test") && !code.contains("import ")) {
+            currentErrors = "Missing imports (JUnit/Mockito)";
+            return true;
+        }
+        
+        // Check for specific missing imports
+        List<String> missingImports = new ArrayList<>();
+        if (code.contains("@Test") && !code.contains("import org.junit")) {
+            missingImports.add("Missing JUnit imports (org.junit.jupiter.api.Test)");
+        }
+        if (code.contains("@DisplayName") && !code.contains("import org.junit.jupiter.api.DisplayName")) {
+            missingImports.add("Missing DisplayName import");
+        }
+        if (code.contains("assertThat") && !code.contains("import static org.assertj")) {
+            missingImports.add("Missing AssertJ imports");
+        }
+        if (code.contains("@Mock") || code.contains("@ExtendWith")) {
+            if (!code.contains("import org.mockito")) {
+                missingImports.add("Missing Mockito imports");
+            }
+            if (!code.contains("import org.junit.jupiter.api.extension.ExtendWith")) {
+                missingImports.add("Missing ExtendWith import");
+            }
+        }
+        if (!code.contains("class ") || !code.contains("{") || !code.contains("}")) {
+            missingImports.add("Code is missing class definition");
+        }
+        
+        if (!missingImports.isEmpty()) {
+            currentErrors = String.join("\n", missingImports);
+            System.out.println("Missing imports detected: " + currentErrors);
+            return true;
+        }
+
+        // Second check: PSI Syntax Analysis
         try {
-            // Wrap PSI operations in ReadAction
-            VirtualFile[] virtualFileHolder = new VirtualFile[1];
+            final boolean[] hasErrors = {false};
+            final StringBuilder errorDetails = new StringBuilder();
             
             com.intellij.openapi.application.ReadAction.run(() -> {
-                // Create temporary PSI file for compilation check
+                // Create temporary PSI file
                 PsiFile tempFile = PsiFileFactory.getInstance(project)
                     .createFileFromText("TempTest.java", StdFileTypes.JAVA, code);
                 
-                virtualFileHolder[0] = tempFile.getVirtualFile();
+                // Walk PSI tree to find errors
+                tempFile.accept(new PsiRecursiveElementVisitor() {
+                    @Override
+                    public void visitElement(@NotNull PsiElement element) {
+                        super.visitElement(element);
+                        if (element instanceof PsiErrorElement) {
+                            PsiErrorElement error = (PsiErrorElement) element;
+                            // Calculate line number
+                            int line = calculateLineNumber(code, error.getTextOffset());
+                            errorDetails.append("Line ").append(line).append(": ").append(error.getErrorDescription()).append("\n");
+                            hasErrors[0] = true;
+                        }
+                    }
+                });
             });
             
-            VirtualFile virtualFile = virtualFileHolder[0];
-            if (virtualFile != null) {
-                // Use RealCompilationValidator
-                com.reasoningtestgen.validator.RealCompilationValidator validator = 
-                    new com.reasoningtestgen.validator.RealCompilationValidator(project);
-                
-                com.reasoningtestgen.validator.RealCompilationValidator.ValidationResult result = 
-                    validator.validateCompilation(virtualFile);
-                
-                if (!result.isValid()) {
-                    currentErrors = result.errors().stream()
-                        .map(e -> "Line " + e.line() + ": " + e.description())
-                        .collect(java.util.stream.Collectors.joining("\n"));
-                    System.out.println("Found " + result.errors().size() + " compilation errors");
-                    return true;
-                }
-            }
-        } catch (Exception e) {
-            System.out.println("Compilation check failed: " + e.getMessage());
-            // If we can't compile, fall back to basic checks
-            if (!code.contains("import ") && code.contains("class ")) {
-                currentErrors = "Missing imports";
+            if (hasErrors[0]) {
+                currentErrors = errorDetails.toString().trim();
+                System.out.println("Found PSI errors: " + currentErrors);
                 return true;
             }
+        } catch (Exception e) {
+            System.out.println("PSI Analysis failed: " + e.getMessage());
+            currentErrors = "Syntax analysis failed: " + e.getMessage();
+            return true;
         }
-        
+
         return false;
+    }
+    
+    /**
+     * Helper to calculate line number from offset
+     */
+    private int calculateLineNumber(String text, int offset) {
+        if (offset >= text.length()) offset = text.length() - 1;
+        int line = 1;
+        for (int i = 0; i < offset; i++) {
+            if (text.charAt(i) == '\n') {
+                line++;
+            }
+        }
+        return line;
     }
 
     /**

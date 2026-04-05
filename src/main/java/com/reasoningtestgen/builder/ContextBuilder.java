@@ -54,8 +54,17 @@ public class ContextBuilder {
             - Верните ТОЛЬКО Java код, начиная с package declaration
             - НЕ включайте JSON, markdown, или текстовые описания
             - НЕ включайте объяснений или комментариев о том что вы делаете
+            - ОБЯЗАТЕЛЬНО включите ВСЕ необходимые импорты (JUnit, Mockito, AssertJ, тестируемый класс и его зависимости)
             - Начните с: package ...
             - Закройте последней }: класса
+            
+            ВАЖНО про импорты:
+            - ВСЕГДА добавляйте import org.junit.jupiter.api.Test;
+            - ВСЕГДА добавляйте import org.junit.jupiter.api.DisplayName;
+            - ВСЕГДА добавляйте import static org.assertj.core.api.Assertions.*;
+            - Если используете моки: import org.mockito.*; и import org.junit.jupiter.api.extension.ExtendWith;
+            - Если используете @ParameterizedTest: import org.junit.jupiter.params.ParameterizedTest;
+            - Добавьте импорты для ВСЕХ классов используемых в методе (User, Order, Service и т.д.)
 
             Руководство:
             - Всегда покрывайте основной сценарий (happy path), граничные случаи, обработку ошибок и краевые условия
@@ -73,14 +82,104 @@ public class ContextBuilder {
 
             import org.junit.jupiter.api.Test;
             import org.junit.jupiter.api.DisplayName;
+            import org.junit.jupiter.api.Nested;
             import static org.assertj.core.api.Assertions.assertThat;
+            import static org.assertj.core.api.Assertions.assertThatThrownBy;
+            import static org.mockito.Mockito.when;
 
+            @ExtendWith(MockitoExtension.class)
             class MyServiceTest {
-                @Test
-                @DisplayName("Возвращает результат при валидном вводе")
-                void should_return_result_when_input_valid() {
-                    // test code
+                @Mock MyRepository repo;
+                @InjectMocks MyService service;
+
+                @Nested
+                @DisplayName("Happy Path Scenarios")
+                class HappyPath {
+                    @Test
+                    @DisplayName("Возвращает результат при валидном вводе")
+                    void should_return_result_when_input_valid() {
+                        // Given
+                        when(repo.findById(1L)).thenReturn(Optional.of(new Entity()));
+
+                        // When
+                        Result result = service.doSomething(1L);
+
+                        // Then
+                        assertThat(result).isNotNull();
+                        assertThat(result.getStatus()).isEqualTo("SUCCESS");
+                    }
                 }
+                
+                @Nested
+                @DisplayName("Error Scenarios")
+                class Errors {
+                    @Test
+                    @DisplayName("Выбрасывает исключение когда сущность не найдена")
+                    void should_throw_exception_when_entity_not_found() {
+                        // Given
+                        when(repo.findById(99L)).thenReturn(Optional.empty());
+
+                        // When & Then
+                        assertThatThrownBy(() -> service.doSomething(99L))
+                            .isInstanceOf(EntityNotFoundException.class)
+                            .hasMessageContaining("not found");
+                    }
+                }
+            }
+            ```
+            """;
+    }
+
+    /**
+     * Build few-shot examples string
+     */
+    @NotNull
+    private String buildFewShotExamples() {
+        return """
+            ## 🌟 Примеры лучших практик (Few-Shot Examples)
+            
+            Используйте эти паттерны как основу для генерации:
+
+            **Пример 1: Параметризованный тест (Data Driven)**
+            ```java
+            @ParameterizedTest(name = "Возвращает {1} для возраста {0}")
+            @CsvSource({
+                "17, MINOR",
+                "18, ADULT", 
+                "65, SENIOR"
+            })
+            @DisplayName("Определяет категорию пользователя по возрасту")
+            void shouldClassifyUserByAge(int age, String expectedCategory) {
+                assertThat(categorizer.categorize(age)).isEqualTo(expectedCategory);
+            }
+            ```
+            
+            **Пример 2: Тестирование исключений (Modern Style)**
+            ```java
+            @Test
+            @DisplayName("Выбрасывает IllegalArgumentException при пустом списке")
+            void shouldThrow_whenListIsEmpty() {
+                assertThatThrownBy(() -> service.process(List.of()))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("List cannot be empty");
+            }
+            ```
+            
+            **Пример 3: Мокирование зависимостей**
+            ```java
+            @Test
+            @DisplayName("Сохраняет пользователя через репозиторий")
+            void shouldSaveUserViaRepository() {
+                // Given
+                User user = new User("test");
+                when(repo.save(any())).thenReturn(user.withId(1L));
+                
+                // When
+                User result = service.createUser(user);
+                
+                // Then
+                assertThat(result.getId()).isEqualTo(1L);
+                verify(repo, times(1)).save(user);
             }
             ```
             """;
@@ -413,7 +512,7 @@ public class ContextBuilder {
             prompt.append("```\n\n");
         }
         
-        return prompt.toString();
+        return prompt.toString() + "\n\n" + buildFewShotExamples();
     }
 
     /**
