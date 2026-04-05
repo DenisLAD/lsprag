@@ -25,10 +25,25 @@ public record MethodContext(
     @JsonProperty("complexity") ComplexityMetrics complexity,
     @JsonProperty("isRestController") boolean isRestController,
     @JsonProperty("isSpringService") boolean isSpringService,
-    @JsonProperty("isSpringRepository") boolean isSpringRepository
+    @JsonProperty("isSpringRepository") boolean isSpringRepository,
+    @JsonProperty("sourceCode") String sourceCode,
+    @JsonProperty("coverageInfo") CoverageInfo coverageInfo
 ) {
     public record ControlFlow(
         @JsonProperty("nodes") List<CFGNode> nodes
     ) {
+    }
+    
+    /**
+     * Create a copy with updated coverage info
+     */
+    public MethodContext withCoverageInfo(CoverageInfo coverage) {
+        return new MethodContext(
+            className, methodName, returnType, parameters, annotations,
+            controlFlow, dependencies, dependenciesInfo, calledMethods,
+            dtoStructures, dataTransformations, docContract, existingTests,
+            complexity, isRestController, isSpringService, isSpringRepository,
+            sourceCode, coverage
+        );
     }
 }

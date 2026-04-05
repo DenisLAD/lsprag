@@ -20,6 +20,7 @@ import com.reasoningtestgen.builder.ContextBuilder;
 import com.reasoningtestgen.extractor.PSIExtractor;
 import com.reasoningtestgen.model.MethodContext;
 import com.reasoningtestgen.model.PromptBundle;
+import com.reasoningtestgen.service.CoverageAnalysisService;
 import com.reasoningtestgen.settings.PluginSettings;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -135,8 +136,28 @@ public class GenerateTestsAction extends AnAction {
                         PSIExtractor extractor = new PSIExtractor();
                         return extractor.extract(method);
                     });
-                    
+
                     LOG.info("Extracted context for {}.{}", context.className(), context.methodName());
+
+                    // Step 1.5: Start background coverage analysis
+                    CoverageAnalysisService coverageService = CoverageAnalysisService.getInstance(project);
+                    MethodContext[] contextWithCoverage = new MethodContext[1];
+                    contextWithCoverage[0] = context;
+                    
+                    coverageService.analyzeInBackground(context, method, new CoverageAnalysisService.CoverageCallback() {
+                        @Override
+                        public void onComplete(com.reasoningtestgen.model.CoverageInfo coverageInfo) {
+                            if (coverageInfo != null) {
+                                contextWithCoverage[0] = context.withCoverageInfo(coverageInfo);
+                                LOG.info("Coverage analysis completed: {}", coverageInfo);
+                            }
+                        }
+                        
+                        @Override
+                        public void onError(@NotNull Throwable error) {
+                            LOG.error("Coverage analysis failed", error);
+                        }
+                    });
                     
                     // Step 2: Build prompts
                     indicator.setText("Building prompts...");

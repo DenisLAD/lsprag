@@ -35,6 +35,8 @@ import com.intellij.util.ui.JBUI;
 import com.reasoningtestgen.generator.TestFileWriter;
 import com.reasoningtestgen.llm.LLMProvider;
 import com.reasoningtestgen.llm.LLMProviderFactory;
+import com.reasoningtestgen.model.CFGNode;
+import com.reasoningtestgen.model.CoverageInfo;
 import com.reasoningtestgen.model.GeneratedCode;
 import com.reasoningtestgen.model.TestDesign;
 import com.reasoningtestgen.refiner.SelfCorrectionEngine;
@@ -48,6 +50,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 import java.awt.*;
+import java.util.List;
 
 /**
  * Non-blocking preview dialog for reviewing and editing prompts before LLM generation
@@ -76,6 +79,11 @@ public class TestGenerationPreviewDialog extends DialogWrapper {
     private String generatedCode;
     private boolean hasErrors = false;
     private String currentErrors = "";
+    @Nullable
+    private CoverageInfo coverageInfo;
+    private JTextArea coverageArea;
+    private javax.swing.Timer coverageUpdateTimer;
+    private JProgressBar coverageProgress;
 
     public TestGenerationPreviewDialog(@NotNull Project project,
                                         @NotNull String className,
@@ -252,16 +260,26 @@ public class TestGenerationPreviewDialog extends DialogWrapper {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(JBUI.Borders.empty(10));
         
-        // Header
-        JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        headerPanel.add(new JLabel("<html><b>📊 Coverage Preview</b><br/>Branches that will be covered by generated tests</html>"));
+        // Header with progress indicator
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        JLabel headerLabel = new JLabel("<html><b>📊 Coverage Analysis</b><br/>Real-time branch coverage mapping</html>");
+        headerPanel.add(headerLabel, BorderLayout.CENTER);
+        
+        // Progress indicator
+        coverageProgress = new JProgressBar();
+        coverageProgress.setIndeterminate(true);
+        coverageProgress.setStringPainted(true);
+        coverageProgress.setString("Analyzing branches...");
+        coverageProgress.setPreferredSize(new Dimension(0, 20));
+        headerPanel.add(coverageProgress, BorderLayout.SOUTH);
+        
         panel.add(headerPanel, BorderLayout.NORTH);
         
         // Build coverage information
-        String coverageInfo = buildCoverageInfo();
+        String coverageText = buildCoverageInfo();
         
         // Display in text area
-        JTextArea coverageArea = new JTextArea(coverageInfo);
+        coverageArea = new JTextArea(coverageText);
         coverageArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
         coverageArea.setEditable(false);
         coverageArea.setMargin(JBUI.insets(10));
@@ -270,53 +288,108 @@ public class TestGenerationPreviewDialog extends DialogWrapper {
         scrollPane.setBorder(BorderFactory.createEtchedBorder());
         panel.add(scrollPane, BorderLayout.CENTER);
         
+        // Start periodic update timer
+        startCoverageUpdates();
+        
         return panel;
     }
 
     /**
-     * Build coverage information text
+     * Start periodic coverage updates
+     */
+    private void startCoverageUpdates() {
+        coverageUpdateTimer = new javax.swing.Timer(2000, e -> updateCoverageDisplay());
+        coverageUpdateTimer.setRepeats(true);
+        coverageUpdateTimer.start();
+    }
+
+    /**
+     * Update coverage display with latest data
+     */
+    private void updateCoverageDisplay() {
+        // Check for new coverage data
+        com.reasoningtestgen.service.CoverageAnalysisService coverageService = 
+            com.reasoningtestgen.service.CoverageAnalysisService.getInstance(project);
+        
+        CoverageInfo newCoverage = coverageService.getLastResult();
+        boolean analysisComplete = !coverageService.isAnalysisInProgress();
+        
+        if (newCoverage != null && newCoverage != coverageInfo) {
+            coverageInfo = newCoverage;
+            
+            // Update progress bar
+            if (coverageProgress != null) {
+                if (analysisComplete) {
+                    coverageProgress.setIndeterminate(false);
+                    coverageProgress.setValue(100);
+                    coverageProgress.setString("✓ Analysis complete");
+                } else {
+                    coverageProgress.setString("Mapping tests to branches...");
+                }
+            }
+        }
+        
+        if (coverageArea != null) {
+            coverageArea.setText(buildCoverageInfo());
+        }
+        
+        // Stop timer if analysis is complete and we have data
+        if (analysisComplete && coverageInfo != null) {
+            if (coverageUpdateTimer != null) {
+                coverageUpdateTimer.stop();
+            }
+        }
+    }
+
+    /**
+     * Build coverage information text from real coverage data
      */
     @NotNull
     private String buildCoverageInfo() {
         StringBuilder coverage = new StringBuilder();
-        coverage.append("Expected Test Coverage:\n");
-        coverage.append("=====================\n\n");
         
-        // Count conditions and branches from prompt
-        String[] lines = fullPrompt.split("\n");
-        int ifCount = 0;
-        int ternaryCount = 0;
-        int switchCount = 0;
-        int loopCount = 0;
-        
-        for (String line : lines) {
-            if (line.contains("if (")) ifCount++;
-            if (line.contains("ternary:")) ternaryCount++;
-            if (line.contains("switch") || line.contains("case")) switchCount++;
-            if (line.contains("loop") || line.contains("for") || line.contains("while")) loopCount++;
+        if (coverageInfo == null) {
+            coverage.append("Branch Coverage Analysis:\n");
+            coverage.append("========================\n\n");
+            coverage.append("⏳ Coverage analysis in progress...\n\n");
+            coverage.append("The plugin is analyzing:\n");
+            coverage.append("  • Existing test methods\n");
+            coverage.append("  • Control flow graph (CFG) branches\n");
+            coverage.append("  • Branch-to-test mapping\n\n");
+            coverage.append("Results will appear automatically when analysis completes.");
+            return coverage.toString();
         }
         
-        int totalBranches = (ifCount * 2) + (ternaryCount * 2) + switchCount + loopCount;
-        int expectedTests = totalBranches + 2; // +2 for happy path and edge cases
+        coverage.append("Branch Coverage Analysis:\n");
+        coverage.append("========================\n\n");
         
-        coverage.append("Branches detected:\n");
-        coverage.append("  - if statements: ").append(ifCount).append("\n");
-        coverage.append("  - ternary operators: ").append(ternaryCount).append("\n");
-        coverage.append("  - switch/case: ").append(switchCount).append("\n");
-        coverage.append("  - loops: ").append(loopCount).append("\n");
-        coverage.append("\nTotal branches: ").append(totalBranches).append("\n");
-        coverage.append("Expected test methods: ~").append(expectedTests).append("\n\n");
+        // Real coverage data
+        coverage.append(String.format("Overall Coverage: %.0f%%\n", coverageInfo.overallCoveragePercent()));
+        coverage.append(String.format("Covered Branches: %d / %d\n", 
+            coverageInfo.coveredBranches(), coverageInfo.totalBranches()));
+        coverage.append(String.format("Existing Tests: %d\n\n", coverageInfo.existingTestCount()));
         
-        coverage.append("Expected coverage:\n");
-        coverage.append("  ✓ Happy path (main success scenario)\n");
-        coverage.append("  ✓ Error paths (exceptions)\n");
-        coverage.append("  ✓ Boundary conditions (edge cases)\n");
-        coverage.append("  ✓ Null/empty checks\n");
-        coverage.append("  ✓ Business rules\n\n");
+        // Covered branches
+        if (!coverageInfo.coveredNodes().isEmpty()) {
+            coverage.append("✓ COVERED Branches:\n");
+            for (CFGNode node : coverageInfo.coveredNodes()) {
+                List<String> tests = coverageInfo.getTestsCoveringNode(node);
+                coverage.append(String.format("  Line %d: %s\n", node.line(), node.condition()));
+                if (!tests.isEmpty()) {
+                    coverage.append(String.format("    → Covered by: %s\n", String.join(", ", tests)));
+                }
+            }
+            coverage.append("\n");
+        }
         
-        if (totalBranches > 0) {
-            double coveragePercent = Math.min(95.0, (expectedTests * 100.0) / Math.max(totalBranches, 1));
-            coverage.append(String.format("Estimated coverage: %.0f%%\n", coveragePercent));
+        // Uncovered branches
+        if (!coverageInfo.uncoveredNodes().isEmpty()) {
+            coverage.append("✗ UNCOVERED Branches:\n");
+            for (CFGNode node : coverageInfo.uncoveredNodes()) {
+                coverage.append(String.format("  Line %d: %s\n", node.line(), node.condition()));
+            }
+            coverage.append("\n");
+            coverage.append("💡 These branches will be covered by the generated tests.\n");
         }
         
         return coverage.toString();
@@ -1007,6 +1080,11 @@ public class TestGenerationPreviewDialog extends DialogWrapper {
 
     @Override
     public void dispose() {
+        // Stop coverage update timer
+        if (coverageUpdateTimer != null) {
+            coverageUpdateTimer.stop();
+        }
+        
         // Release editor resources
         if (promptEditor != null) {
             EditorFactory.getInstance().releaseEditor(promptEditor);

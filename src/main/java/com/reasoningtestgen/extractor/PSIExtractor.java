@@ -69,7 +69,9 @@ public class PSIExtractor {
                 complexity,
                 isRestController(containingClass),
                 isSpringService(containingClass),
-                isSpringRepository(containingClass)
+                isSpringRepository(containingClass),
+                extractMethodSource(method),
+                null // coverageInfo will be filled by CoverageAnalysisService
             );
         });
     }
@@ -122,7 +124,9 @@ public class PSIExtractor {
                 complexity,
                 isRestController(containingClass),
                 isSpringService(containingClass),
-                isSpringRepository(containingClass)
+                isSpringRepository(containingClass),
+                extractMethodSource(method),
+                null // coverageInfo will be filled by CoverageAnalysisService
             );
         });
     }
@@ -1231,6 +1235,14 @@ public class PSIExtractor {
         return modifierList.findAnnotation("org.springframework.web.bind.annotation.RequestMapping") != null ||
                modifierList.findAnnotation("org.springframework.web.bind.annotation.GetMapping") != null ||
                modifierList.findAnnotation("org.springframework.web.bind.annotation.PostMapping") != null;
+    }
+
+    /**
+     * Extract method source code
+     */
+    @Nullable
+    private String extractMethodSource(@NotNull PsiMethod method) {
+        return method.getText();
     }
 
     /**

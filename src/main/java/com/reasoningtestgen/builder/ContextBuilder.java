@@ -60,6 +60,8 @@ public class ContextBuilder {
             Руководство:
             - Всегда покрывайте основной сценарий (happy path), граничные случаи, обработку ошибок и краевые условия
             - Используйте описательные имена тестовых методов по соглашению: should_{ожидание}_when_{условие}
+            - ОБЯЗАТЕЛЬНО добавляйте @DisplayName("описание на русском") к КАЖДОМУ тесту
+            - @DisplayName должен описывать ЧТО проверяет тест понятным языком
             - Пишите изолированные, повторяемые тесты с правильной подготовкой и очисткой
             - Включайте осмысленные тестовые данные, отражающие реальные сценарии
             - Используйте соответствующие стратегии мокирования без избыточного мокирования
@@ -68,12 +70,14 @@ public class ContextBuilder {
             Пример правильного формата:
             ```java
             package com.example;
-            
+
             import org.junit.jupiter.api.Test;
+            import org.junit.jupiter.api.DisplayName;
             import static org.assertj.core.api.Assertions.assertThat;
-            
+
             class MyServiceTest {
                 @Test
+                @DisplayName("Возвращает результат при валидном вводе")
                 void should_return_result_when_input_valid() {
                     // test code
                 }
@@ -96,10 +100,49 @@ public class ContextBuilder {
         prompt.append("Возвращаемый тип: ").append(context.returnType()).append("\n");
         prompt.append("Параметры: ").append(formatParameters(context.parameters())).append("\n");
         prompt.append("Аннотации: ").append(String.join(", ", context.annotations())).append("\n\n");
+        
+        // Method source code
+        if (context.sourceCode() != null && !context.sourceCode().isEmpty()) {
+            prompt.append("## Исходный код метода\n");
+            prompt.append("```java\n");
+            prompt.append(context.sourceCode());
+            prompt.append("\n```\n\n");
+        }
 
-        // Control Flow Graph
+        // Control Flow Graph with explicit branch coverage requirement
         prompt.append("## Граф потока управления (CFG)\n");
         prompt.append(formatCFG(context.controlFlow().nodes())).append("\n\n");
+        
+        // Explicit branch coverage requirement
+        List<CFGNode> branchNodes = context.controlFlow().nodes().stream()
+            .filter(node -> node.type() == CFGNode.NodeType.IF || 
+                           node.type() == CFGNode.NodeType.SWITCH ||
+                           node.type() == CFGNode.NodeType.CATCH)
+            .collect(Collectors.toList());
+        
+        if (!branchNodes.isEmpty()) {
+            prompt.append("## ⚠️ ТРЕБОВАНИЕ: Покрытие всех веток\n");
+            prompt.append("Вы ОБЯЗАНЫ создать тесты для КАЖДОЙ ветки CFG:\n\n");
+            
+            int testNum = 1;
+            for (CFGNode branch : branchNodes) {
+                switch (branch.type()) {
+                    case IF:
+                        prompt.append(String.format("%d. Тест: условие '%s' → TRUE (then branch)\n", testNum++, branch.condition()));
+                        prompt.append(String.format("%d. Тест: условие '%s' → FALSE (else branch)\n", testNum++, branch.condition()));
+                        break;
+                    case SWITCH:
+                        prompt.append(String.format("%d. Тест: switch '%s' → каждый case\n", testNum++, branch.condition()));
+                        break;
+                    case CATCH:
+                        prompt.append(String.format("%d. Тест: exception '%s' caught\n", testNum++, branch.condition()));
+                        break;
+                }
+            }
+            
+            prompt.append("\nКаждый тест должен проверять ОДНУ конкретную ветку.\n");
+            prompt.append("Используйте описательные имена: should_{result}_when_{condition}\n\n");
+        }
 
         // Dependencies
         prompt.append("## Зависимости\n");
