@@ -9,6 +9,9 @@ name: Java CI with Gradle
 
 on:
   push:
+    branches:
+      - master
+      - v2    
     tags:
       - 'v*'
 
