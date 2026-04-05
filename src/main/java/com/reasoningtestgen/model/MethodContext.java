@@ -22,7 +22,10 @@ public record MethodContext(
     @JsonProperty("dataTransformations") List<DataTransformation> dataTransformations,
     @JsonProperty("docContract") DocContract docContract,
     @JsonProperty("existingTests") List<ExistingTestInfo> existingTests,
-    @JsonProperty("complexity") ComplexityMetrics complexity
+    @JsonProperty("complexity") ComplexityMetrics complexity,
+    @JsonProperty("isRestController") boolean isRestController,
+    @JsonProperty("isSpringService") boolean isSpringService,
+    @JsonProperty("isSpringRepository") boolean isSpringRepository
 ) {
     public record ControlFlow(
         @JsonProperty("nodes") List<CFGNode> nodes

@@ -66,7 +66,10 @@ public class PSIExtractor {
                 dataTransformations,
                 docContract,
                 existingTests,
-                complexity
+                complexity,
+                isRestController(containingClass),
+                isSpringService(containingClass),
+                isSpringRepository(containingClass)
             );
         });
     }
@@ -116,7 +119,10 @@ public class PSIExtractor {
                 dataTransformations,
                 docContract,
                 existingTests,
-                complexity
+                complexity,
+                isRestController(containingClass),
+                isSpringService(containingClass),
+                isSpringRepository(containingClass)
             );
         });
     }
@@ -1179,6 +1185,52 @@ public class PSIExtractor {
         int maxLines = Math.min(lines.length, 10);
         return String.join("\n", Arrays.copyOfRange(lines, 0, maxLines)) + 
                (lines.length > 10 ? "\n..." : "");
+    }
+
+    /**
+     * Check if class is a Spring REST Controller
+     */
+    public boolean isRestController(@Nullable PsiClass psiClass) {
+        if (psiClass == null) return false;
+        PsiModifierList modifierList = psiClass.getModifierList();
+        if (modifierList == null) return false;
+        
+        return modifierList.findAnnotation("org.springframework.web.bind.annotation.RestController") != null ||
+               (modifierList.findAnnotation("org.springframework.stereotype.Controller") != null &&
+                hasRequestMappingAnnotation(psiClass));
+    }
+
+    /**
+     * Check if class is a Spring Service
+     */
+    public boolean isSpringService(@Nullable PsiClass psiClass) {
+        if (psiClass == null) return false;
+        PsiModifierList modifierList = psiClass.getModifierList();
+        return modifierList != null && 
+               modifierList.findAnnotation("org.springframework.stereotype.Service") != null;
+    }
+
+    /**
+     * Check if class is a Spring Repository
+     */
+    public boolean isSpringRepository(@Nullable PsiClass psiClass) {
+        if (psiClass == null) return false;
+        PsiModifierList modifierList = psiClass.getModifierList();
+        return modifierList != null && 
+               (modifierList.findAnnotation("org.springframework.stereotype.Repository") != null ||
+                modifierList.findAnnotation("org.springframework.data.jpa.repository.JpaRepository") != null);
+    }
+
+    /**
+     * Check if class has @RequestMapping annotation
+     */
+    private boolean hasRequestMappingAnnotation(@NotNull PsiClass psiClass) {
+        PsiModifierList modifierList = psiClass.getModifierList();
+        if (modifierList == null) return false;
+        
+        return modifierList.findAnnotation("org.springframework.web.bind.annotation.RequestMapping") != null ||
+               modifierList.findAnnotation("org.springframework.web.bind.annotation.GetMapping") != null ||
+               modifierList.findAnnotation("org.springframework.web.bind.annotation.PostMapping") != null;
     }
 
     /**

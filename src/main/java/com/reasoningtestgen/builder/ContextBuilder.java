@@ -325,6 +325,35 @@ public class ContextBuilder {
         prompt.append("- Закройте код последней скобкой }\n\n");
         prompt.append("НЕ возвращайте JSON! НЕ возвращайте описание тестов! ТОЛЬКО Java код!\n");
         
+        // Add specific recommendations based on class type
+        if (context.isRestController()) {
+            prompt.append("\n## Специфика: Spring REST Controller\n");
+            prompt.append("Это REST контроллер. Рекомендуется использовать:\n");
+            prompt.append("- MockMvc для тестирования HTTP endpoints\n");
+            prompt.append("- @WebMvcTest для slice-тестов\n");
+            prompt.append("- MockHttpServletResponse для проверки ответов\n");
+            prompt.append("- Тестирование status codes, headers, response body\n");
+            prompt.append("- @MockBean для зависимостей (сервисы, репозитории)\n\n");
+        }
+        
+        if (context.isSpringService()) {
+            prompt.append("\n## Специфика: Spring Service\n");
+            prompt.append("Это сервисный слой. Рекомендуется использовать:\n");
+            prompt.append("- @ExtendWith(MockitoExtension.class)\n");
+            prompt.append("- @Mock для репозиториев и внешних зависимостей\n");
+            prompt.append("- @InjectMocks для тестируемого сервиса\n");
+            prompt.append("- Тестирование бизнес-логики без HTTP\n\n");
+        }
+        
+        if (context.isSpringRepository()) {
+            prompt.append("\n## Специфика: Spring Repository\n");
+            prompt.append("Это слой доступа к данным. Рекомендуется использовать:\n");
+            prompt.append("- @DataJpaTest для slice-тестов\n");
+            prompt.append("- @AutoConfigureTestDatabase для тестовой БД\n");
+            prompt.append("- Тестирование CRUD операций\n");
+            prompt.append("- Тестирование custom query methods\n\n");
+        }
+        
         return prompt.toString();
     }
 
