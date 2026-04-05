@@ -1,0 +1,54 @@
+<idea-plugin>
+    <id>com.reasoningtestgen.plugin</id>
+    <name>Reasoning Test Generator</name>
+    <vendor email="support@reasoningtestgen.com" url="https://github.com/reasoning-test-generator">Reasoning Test Generator Team</vendor>
+
+    <description><![CDATA[
+    Advanced unit test generation plugin using LLM-based reasoning analysis.
+    <br>
+    Features:
+    <ul>
+        <li>Generate JUnit 5 / TestNG tests from Java methods</li>
+        <li>Multi-step reasoning pipeline (Intent → Scenarios → Design → Code)</li>
+        <li>Automatic test stack detection (JUnit, Mockito, AssertJ)</li>
+        <li>Self-validation and compilation check</li>
+        <li>Preview dialog before insertion</li>
+        <li>Support for local LLM (Ollama) and cloud providers</li>
+        <li>Compatible with IntelliJ IDEA 2025.1+</li>
+    </ul>
+    ]]></description>
+
+    <depends>com.intellij.modules.java</depends>
+    <depends>com.intellij.modules.lang</depends>
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Application Services -->
+        <applicationService serviceImplementation="com.reasoningtestgen.settings.PluginSettings"/>
+        
+        <!-- Settings Page -->
+        <applicationConfigurable parentId="tools"
+                                 instance="com.reasoningtestgen.settings.PluginSettingsConfigurable"
+                                 id="com.reasoningtestgen.settings.PluginSettingsConfigurable"
+                                 displayName="Reasoning Test Generator"/>
+
+        <!-- Notification Group -->
+        <notificationGroup id="Reasoning Test Generator"
+                           displayType="BALLOON"
+                           bundle="messages.PluginBundle"
+                           key="notification.group"/>
+    </extensions>
+
+    <!-- Actions -->
+    <actions>
+        <!-- Generate Tests Action in Editor Context Menu -->
+        <action id="com.reasoningtestgen.action.GenerateTestsAction"
+                class="com.reasoningtestgen.action.GenerateTestsAction"
+                text="Generate Reasoning Tests"
+                description="Generate unit tests using LLM-based reasoning analysis">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+            <keyboard-shortcut keymap="$default" first-keystroke="alt G"/>
+        </action>
+    </actions>
+</idea-plugin>

@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gradle *)",
+      "Bash(powershell *)",
+      "Bash(set *)",
+      "Bash(gradlew.bat *)",
+      "Bash(dir *)",
+      "Bash(rmdir *)",
+      "Bash(findstr *)",
+      "Bash(type *)",
+      "Bash(run-simple-tests.bat)",
+      "Bash(curl *)",
+      "Bash(copy *)",
+      "Bash(del *)",
+      "Bash(echo.)",
+      "Bash(taskkill *)",
+      "Bash(timeout *)"
+    ]
+  },
+  "$version": 3
+}
