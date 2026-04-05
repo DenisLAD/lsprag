@@ -19,8 +19,14 @@ import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiFileFactory;
+import com.intellij.psi.PsiErrorElement;
+import com.intellij.psi.PsiRecursiveElementVisitor;
+import com.intellij.codeInsight.daemon.impl.HighlightInfo;
+import com.intellij.codeInsight.daemon.impl.HighlightInfoType;
+import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.testFramework.LightVirtualFile;
 import com.intellij.ui.JBSplitter;
@@ -412,10 +418,60 @@ public class TestGenerationPreviewDialog extends DialogWrapper {
             EditorEx editorEx = (EditorEx) resultEditor;
             
             // Show error message in status bar
-            statusLabel.setText("  ⚠ Found errors: " + errors.split("\n").length + " error(s)");
+            String[] errorLines = errors.split("\n");
+            statusLabel.setText("  ⚠ Found errors: " + errorLines.length + " error(s)");
             
-            // Could add line-level highlighting here if we had line numbers
-            // For now, showing errors in status is sufficient
+            // Highlight each error line in the editor
+            String[] lines = generatedCode.split("\n");
+            for (String error : errorLines) {
+                // Extract line number from error message
+                if (error.contains("Line ")) {
+                    try {
+                        String linePart = error.substring(error.indexOf("Line ") + 5);
+                        int lineNum = Integer.parseInt(linePart.split(":")[0].trim()) - 1; // 0-indexed
+                        
+                        if (lineNum >= 0 && lineNum < lines.length) {
+                            // Calculate offset for this line
+                            int offset = 0;
+                            for (int i = 0; i < lineNum && i < lines.length; i++) {
+                                offset += lines[i].length() + 1; // +1 for newline
+                            }
+                            
+                            // Add error annotation
+                            addErrorHighlight(editorEx, offset, lines[lineNum].length(), error);
+                        }
+                    } catch (Exception e) {
+                        LOG.debug("Failed to highlight error on line: {}", error, e);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Add error highlight to editor
+     */
+    private void addErrorHighlight(@NotNull EditorEx editor, int startOffset, int length, @NotNull String errorMessage) {
+        try {
+            com.intellij.openapi.editor.markup.MarkupModel markup = editor.getMarkupModel();
+            com.intellij.openapi.editor.markup.TextAttributes attributes = 
+                new com.intellij.openapi.editor.markup.TextAttributes();
+            
+            // Red wave underscore for errors
+            attributes.setEffectColor(java.awt.Color.RED);
+            attributes.setEffectType(com.intellij.openapi.editor.markup.EffectType.WAVE_UNDERSCORE);
+            
+            // Add highlight
+            markup.addRangeHighlighter(
+                startOffset, 
+                startOffset + Math.min(length, 100), 
+                com.intellij.openapi.editor.markup.HighlighterLayer.ERROR, 
+                attributes, 
+                com.intellij.openapi.editor.markup.HighlighterTargetArea.EXACT_RANGE
+            );
+            
+        } catch (Exception e) {
+            LOG.debug("Failed to add error highlight", e);
         }
     }
 
@@ -726,19 +782,17 @@ public class TestGenerationPreviewDialog extends DialogWrapper {
                         if (result.success()) {
                             statusLabel.setText("  ✓ Test saved: " + result.message());
                             
-                            // Optionally ask if user wants to open the file
-                            int response = Messages.showYesNoDialog(
-                                project,
-                                "Test file created successfully!\n\n" + result.message() + "\n\nOpen the file?",
-                                "Test Saved",
-                                Messages.getQuestionIcon()
-                            );
-                            
-                            if (response == Messages.YES && result.file() != null) {
-                                // Open file in editor
-                                com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
-                                    .openFile(result.file(), true);
+                            // Automatically open the file in editor
+                            if (result.file() != null) {
+                                FileEditorManager.getInstance(project).openFile(result.file(), true);
                             }
+                            
+                            // Show success message
+                            Messages.showInfoMessage(
+                                project,
+                                "Test file created successfully!\n\n" + result.message() + "\n\nFile opened in editor.",
+                                "Test Saved"
+                            );
                         } else {
                             statusLabel.setText("  ✗ Failed to save test");
                             Messages.showErrorDialog(
