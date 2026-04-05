@@ -77,6 +77,27 @@ public class GigaChatProvider implements LLMProvider {
     }
 
     /**
+     * Constructor for API Key auth with provided OkHttpClient
+     */
+    public GigaChatProvider(@NotNull String apiKey,
+                              @NotNull String model,
+                              int timeoutSeconds,
+                              @NotNull OkHttpClient client) {
+        this.authMethod = AuthMethod.API_KEY;
+        this.apiKey = apiKey;
+        this.clientId = null;
+        this.clientSecret = null;
+        this.scope = "GIGACHAT_API_PERS";
+        this.model = model;
+        this.timeoutSeconds = timeoutSeconds;
+        this.keystorePath = null;
+        this.keystorePassword = null;
+        this.keystoreType = "JKS";
+        this.objectMapper = new ObjectMapper();
+        this.httpClient = client;
+    }
+
+    /**
      * Constructor for Client ID + Secret auth (businesses)
      */
     public GigaChatProvider(@NotNull String clientId,
@@ -84,6 +105,18 @@ public class GigaChatProvider implements LLMProvider {
                               @NotNull String scope,
                               @NotNull String model,
                               int timeoutSeconds) {
+        this(clientId, clientSecret, scope, model, timeoutSeconds, null);
+    }
+
+    /**
+     * Constructor for Client ID + Secret auth with provided OkHttpClient
+     */
+    public GigaChatProvider(@NotNull String clientId,
+                              @NotNull String clientSecret,
+                              @NotNull String scope,
+                              @NotNull String model,
+                              int timeoutSeconds,
+                              @NotNull OkHttpClient client) {
         this.authMethod = AuthMethod.CLIENT_CREDENTIALS;
         this.apiKey = null;
         this.clientId = clientId;
@@ -95,7 +128,7 @@ public class GigaChatProvider implements LLMProvider {
         this.keystorePassword = null;
         this.keystoreType = "JKS";
         this.objectMapper = new ObjectMapper();
-        initHttpClient();
+        this.httpClient = client;
     }
 
     /**
@@ -109,6 +142,21 @@ public class GigaChatProvider implements LLMProvider {
                               @NotNull String scope,
                               @NotNull String model,
                               int timeoutSeconds) {
+        this(keystorePath, keystorePassword, keystoreType, clientId, clientSecret, scope, model, timeoutSeconds, null);
+    }
+
+    /**
+     * Constructor for Certificate auth with JKS keystore and provided OkHttpClient
+     */
+    public GigaChatProvider(@NotNull String keystorePath,
+                              @NotNull String keystorePassword,
+                              @NotNull String keystoreType,
+                              @NotNull String clientId,
+                              @NotNull String clientSecret,
+                              @NotNull String scope,
+                              @NotNull String model,
+                              int timeoutSeconds,
+                              @Nullable OkHttpClient client) {
         this.authMethod = AuthMethod.CERTIFICATE;
         this.apiKey = null;
         this.clientId = clientId;
@@ -120,7 +168,11 @@ public class GigaChatProvider implements LLMProvider {
         this.keystorePassword = keystorePassword;
         this.keystoreType = keystoreType;
         this.objectMapper = new ObjectMapper();
-        initHttpClientWithCertificates();
+        if (client != null) {
+            this.httpClient = client;
+        } else {
+            initHttpClientWithCertificates();
+        }
     }
 
     /**

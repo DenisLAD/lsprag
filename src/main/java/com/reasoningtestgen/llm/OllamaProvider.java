@@ -29,8 +29,13 @@ public class OllamaProvider implements LLMProvider {
         this(DEFAULT_ENDPOINT, model, timeoutSeconds);
     }
 
-    public OllamaProvider(@NotNull String endpoint, 
-                           @NotNull String model, 
+    public OllamaProvider(@NotNull String model, int timeoutSeconds,
+                           @NotNull OkHttpClient client) {
+        this(DEFAULT_ENDPOINT, model, timeoutSeconds, client);
+    }
+
+    public OllamaProvider(@NotNull String endpoint,
+                           @NotNull String model,
                            int timeoutSeconds) {
         this.endpoint = endpoint;
         this.model = model;
@@ -40,6 +45,17 @@ public class OllamaProvider implements LLMProvider {
             .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
             .writeTimeout(timeoutSeconds, TimeUnit.SECONDS)
             .build();
+        this.objectMapper = new ObjectMapper();
+    }
+
+    public OllamaProvider(@NotNull String endpoint,
+                           @NotNull String model,
+                           int timeoutSeconds,
+                           @NotNull OkHttpClient client) {
+        this.endpoint = endpoint;
+        this.model = model;
+        this.timeoutSeconds = timeoutSeconds;
+        this.httpClient = client;
         this.objectMapper = new ObjectMapper();
     }
 

@@ -27,15 +27,22 @@ public class OpenAIProvider implements LLMProvider {
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    public OpenAIProvider(@NotNull String apiKey, 
-                           @NotNull String model, 
+    public OpenAIProvider(@NotNull String apiKey,
+                           @NotNull String model,
                            int timeoutSeconds) {
         this(apiKey, DEFAULT_ENDPOINT, model, timeoutSeconds);
     }
 
-    public OpenAIProvider(@NotNull String apiKey, 
-                           @NotNull String endpoint, 
-                           @NotNull String model, 
+    public OpenAIProvider(@NotNull String apiKey,
+                           @NotNull String model,
+                           int timeoutSeconds,
+                           @NotNull OkHttpClient client) {
+        this(apiKey, DEFAULT_ENDPOINT, model, timeoutSeconds, client);
+    }
+
+    public OpenAIProvider(@NotNull String apiKey,
+                           @NotNull String endpoint,
+                           @NotNull String model,
                            int timeoutSeconds) {
         this.apiKey = apiKey;
         this.endpoint = endpoint;
@@ -46,6 +53,19 @@ public class OpenAIProvider implements LLMProvider {
             .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
             .writeTimeout(timeoutSeconds, TimeUnit.SECONDS)
             .build();
+        this.objectMapper = new ObjectMapper();
+    }
+
+    public OpenAIProvider(@NotNull String apiKey,
+                           @NotNull String endpoint,
+                           @NotNull String model,
+                           int timeoutSeconds,
+                           @NotNull OkHttpClient client) {
+        this.apiKey = apiKey;
+        this.endpoint = endpoint;
+        this.model = model;
+        this.timeoutSeconds = timeoutSeconds;
+        this.httpClient = client;
         this.objectMapper = new ObjectMapper();
     }
 

@@ -33,8 +33,8 @@ public class LMStudioProvider implements LLMProvider {
         this(DEFAULT_ENDPOINT, DEFAULT_MODEL, 120);
     }
 
-    public LMStudioProvider(@NotNull String endpoint, 
-                              @NotNull String model, 
+    public LMStudioProvider(@NotNull String endpoint,
+                              @NotNull String model,
                               int timeoutSeconds) {
         this.endpoint = endpoint;
         this.model = model;
@@ -44,6 +44,17 @@ public class LMStudioProvider implements LLMProvider {
             .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
             .writeTimeout(timeoutSeconds, TimeUnit.SECONDS)
             .build();
+        this.objectMapper = new ObjectMapper();
+    }
+
+    public LMStudioProvider(@NotNull String endpoint,
+                              @NotNull String model,
+                              int timeoutSeconds,
+                              @NotNull OkHttpClient client) {
+        this.endpoint = endpoint;
+        this.model = model;
+        this.timeoutSeconds = timeoutSeconds;
+        this.httpClient = client;
         this.objectMapper = new ObjectMapper();
     }
 

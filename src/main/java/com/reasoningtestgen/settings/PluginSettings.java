@@ -269,6 +269,33 @@ public class PluginSettings implements PersistentStateComponent<PluginSettings.S
         state.includeDataTransformations = include;
     }
 
+    // SSL/JKS Getters/Setters
+    @NotNull
+    public String getSslKeyStorePath() {
+        return state.keystorePath != null ? state.keystorePath : "";
+    }
+
+    public void setSslKeyStorePath(String path) {
+        state.keystorePath = path;
+    }
+
+    @NotNull
+    public String getSslKeyStorePassword() {
+        return state.keystorePassword != null ? state.keystorePassword : "";
+    }
+
+    public void setSslKeyStorePassword(String password) {
+        state.keystorePassword = password;
+    }
+
+    public boolean isUseSSL() {
+        return state.useSSL;
+    }
+
+    public void setUseSSL(boolean useSSL) {
+        state.useSSL = useSSL;
+    }
+
     /**
      * Persistent state storage
      */
@@ -296,6 +323,7 @@ public class PluginSettings implements PersistentStateComponent<PluginSettings.S
         public String keystorePath = "";
         public String keystorePassword = "";
         public String keystoreType = "JKS";
+        public boolean useSSL = false;
         
         // Source code inclusion settings
         public boolean includeDependencySourceCode = false;

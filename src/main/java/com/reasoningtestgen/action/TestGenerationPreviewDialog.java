@@ -33,6 +33,9 @@ import com.intellij.testFramework.LightVirtualFile;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
+import com.reasoningtestgen.service.CoverageAnalysisService;
+import com.reasoningtestgen.service.TestPlanningService;
+import com.reasoningtestgen.model.TestPlan;
 import com.reasoningtestgen.generator.TestFileWriter;
 import com.reasoningtestgen.llm.LLMProvider;
 import com.reasoningtestgen.llm.LLMProviderFactory;
@@ -602,9 +605,24 @@ public class TestGenerationPreviewDialog extends DialogWrapper {
                     PluginSettings settings = PluginSettings.getInstance();
                     LLMProvider llmProvider = LLMProviderFactory.createProvider(settings);
                     
-                    // Call LLM with current prompt
-                    String systemPrompt = "Вы — Senior Test Engineer. Сгенерируйте ПРОИЗВОДСТВЕННО-ГОТОВЫЕ unit-тесты для Java метода. Используйте JUnit 5, Mockito, AssertJ.";
-                    String response = llmProvider.chat(currentPrompt, systemPrompt);
+                    // STEP 1: Generate test plan via LLM (improves quality)
+                    indicator.setText("Step 1/3: Analyzing and planning...");
+                    indicator.setFraction(0.1);
+                    
+                    // We need context for planning - extract basic info from prompt
+                    TestPlanningService planningService = new TestPlanningService();
+                    TestPlan testPlan = planningService.generatePlanFromPrompt(currentPrompt, llmProvider, indicator);
+                    
+                    indicator.setText("Step 2/3: Sending to LLM with plan...");
+                    indicator.setFraction(0.4);
+
+                    // Call LLM with current prompt AND plan
+                    String systemPrompt = "Вы — Senior Test Engineer. Сгенерируйте ПРОИЗВОДСТВЕННО-ГОТОВЫЕ unit-тесты для Java метода. Используйте JUnit 5, Mockito, AssertJ. Следуйте плану тестирования который предоставлен в промпте.";
+                    
+                    // Append plan to prompt for better generation
+                    String enhancedPrompt = currentPrompt + "\n\n## 📋 TEST PLAN (follow this plan)\n" + testPlan.toString();
+                    
+                    String response = llmProvider.chat(enhancedPrompt, systemPrompt);
                     
                     indicator.setText("Receiving response...");
                     indicator.setFraction(0.7);
