@@ -286,7 +286,8 @@ public class ReasoningPipelineDialog extends DialogWrapper {
         statusBar.setBorder(BorderFactory.createEtchedBorder());
         statusBar.setPreferredSize(new Dimension(1200, 35));
 
-        statusLabel = new JLabel("  Ready to run reasoning pipeline");
+        statusLabel = new JLabel("  📋 Ready to run reasoning pipeline");
+        statusLabel.setBorder(JBUI.Borders.emptyLeft(5));
         statusBar.add(statusLabel, BorderLayout.CENTER);
 
         progressBar = new JProgressBar();
@@ -318,12 +319,14 @@ public class ReasoningPipelineDialog extends DialogWrapper {
         saveButton.setEnabled(false);
         progressBar.setVisible(true);
         progressBar.setIndeterminate(true);
+        statusLabel.setText("  🚀 Starting reasoning pipeline...");
 
         ProgressManager.getInstance().run(new Task.Backgroundable(project, "Running Reasoning Pipeline") {
             @Override
             public void run(@NotNull ProgressIndicator indicator) {
                 try {
                     indicator.setIndeterminate(false);
+                    statusLabel.setText("  ⚙️  Initializing LLM provider...");
                     
                     // Initialize LLM provider
                     PluginSettings settings = PluginSettings.getInstance();
@@ -340,18 +343,22 @@ public class ReasoningPipelineDialog extends DialogWrapper {
                     // ===== STEP 1: Intent Analysis =====
                     LOG.info("Step 1/5: Intent Analysis");
                     ApplicationManager.getApplication().invokeLater(() -> {
-                        statusLabel.setText("  Step 1/5: Analyzing intent...");
+                        statusLabel.setText("  🎯 Step 1/5: Analyzing method intent and contract...");
+                        pipelineTabs.setSelectedIndex(0); // Switch to Prompt tab first, then Intent
                         progressBar.setValue(20);
                     });
 
                     intentOutput = reasoningEngine.analyzeIntent(methodContext);
+                    ApplicationManager.getApplication().invokeLater(() -> {
+                        pipelineTabs.setSelectedIndex(1); // Switch to Intent tab after completion
+                    });
                     updateIntentDisplay();
 
                     // ===== STEP 2: Scenario Mapping =====
                     LOG.info("Step 2/5: Scenario Mapping");
                     ApplicationManager.getApplication().invokeLater(() -> {
-                        statusLabel.setText("  Step 2/5: Mapping scenarios...");
-                        pipelineTabs.setSelectedIndex(1);
+                        statusLabel.setText("  🌳 Step 2/5: Building scenario tree from CFG...");
+                        pipelineTabs.setSelectedIndex(2);
                         progressBar.setValue(40);
                     });
 
@@ -361,8 +368,8 @@ public class ReasoningPipelineDialog extends DialogWrapper {
                     // ===== STEP 3: Test Design =====
                     LOG.info("Step 3/5: Test Design");
                     ApplicationManager.getApplication().invokeLater(() -> {
-                        statusLabel.setText("  Step 3/5: Designing tests...");
-                        pipelineTabs.setSelectedIndex(2);
+                        statusLabel.setText("  📋 Step 3/5: Selecting test framework and mocking strategy...");
+                        pipelineTabs.setSelectedIndex(3);
                         progressBar.setValue(60);
                     });
 
@@ -372,8 +379,8 @@ public class ReasoningPipelineDialog extends DialogWrapper {
                     // ===== STEP 4: Code Generation =====
                     LOG.info("Step 4/5: Code Generation");
                     ApplicationManager.getApplication().invokeLater(() -> {
-                        statusLabel.setText("  Step 4/5: Generating code...");
-                        pipelineTabs.setSelectedIndex(3);
+                        statusLabel.setText("  ✨ Step 4/5: Generating test code with JUnit/Mockito...");
+                        pipelineTabs.setSelectedIndex(4);
                         progressBar.setValue(80);
                     });
 
@@ -383,8 +390,8 @@ public class ReasoningPipelineDialog extends DialogWrapper {
                     // ===== STEP 5: Compiler Loop Validation =====
                     LOG.info("Step 5/5: Compiler Loop Validation");
                     ApplicationManager.getApplication().invokeLater(() -> {
-                        statusLabel.setText("  Step 5/5: Validating and fixing...");
-                        pipelineTabs.setSelectedIndex(4);
+                        statusLabel.setText("  ✅ Step 5/5: Validating compilation and fixing errors...");
+                        pipelineTabs.setSelectedIndex(5);
                         progressBar.setValue(90);
                     });
 
@@ -423,9 +430,17 @@ public class ReasoningPipelineDialog extends DialogWrapper {
                 } catch (Exception e) {
                     LOG.error("Pipeline failed", e);
                     ApplicationManager.getApplication().invokeLater(() -> {
-                        statusLabel.setText("  ✗ Error: " + e.getMessage());
+                        statusLabel.setText("  ❌ Pipeline failed: " + e.getMessage());
+                        progressBar.setValue(0);
                         progressBar.setVisible(false);
                         runPipelineButton.setEnabled(true);
+                        
+                        // Show error in validation tab
+                        validationArea.setText("## ❌ Pipeline Error\n\n" +
+                            "**Error:** " + e.getClass().getSimpleName() + "\n\n" +
+                            "**Message:** " + e.getMessage() + "\n\n" +
+                            "**Check logs for details.**");
+                        pipelineTabs.setSelectedIndex(5);
                     });
                 }
             }
