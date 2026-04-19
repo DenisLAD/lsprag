@@ -640,8 +640,9 @@ public class ReasoningPipelineDialog extends DialogWrapper {
         if (!correctionResult.remainingErrors().isEmpty()) {
             sb.append("### Remaining Errors\n\n");
             for (RealCompilationValidator.CompilationError error : correctionResult.remainingErrors()) {
-                sb.append(String.format("- Line %d: %s - %s\n",
-                    error.line() > 0 ? error.line() : "?",
+                String lineStr = error.line() > 0 ? String.valueOf(error.line()) : "?";
+                sb.append(String.format("- Line %s: %s - %s\n",
+                    lineStr,
                     error.category(),
                     error.description()));
             }
