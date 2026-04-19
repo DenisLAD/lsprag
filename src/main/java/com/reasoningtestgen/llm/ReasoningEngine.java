@@ -102,36 +102,91 @@ public class ReasoningEngine {
     @NotNull
     public IntentOutput analyzeIntent(@NotNull MethodContext context) throws LLMProvider.LLMException {
         String systemPrompt = """
-            You are analyzing a Java method to understand its intent and contract.
+            You are a Senior Software Architect analyzing a Java method to extract its complete intent and contract.
+
+            CRITICAL REQUIREMENTS:
+            - Be SPECIFIC and DETAILED - avoid generic statements
+            - Analyze ACTUAL business logic, not just "method processes data"
+            - Identify ALL preconditions from parameters and state
+            - List ALL postconditions including return value semantics
+            - Document ALL side effects (DB, I/O, state changes, network calls)
+            - Specify ALL exceptions with their triggers
+
+            OUTPUT FORMAT:
             Respond with JSON containing:
-            - goal: Business purpose of the method
-            - preconditions: What must be true before calling this method
-            - postconditions: What will be true after calling this method
-            - sideEffects: Any side effects (state changes, I/O, etc.)
-            - exceptions: When and why the method throws exceptions
+            - goal: Specific business purpose (2-3 sentences, not generic)
+            - preconditions: List ALL conditions that must be true (at least 2-3)
+            - postconditions: List ALL guarantees after execution (at least 2-3)
+            - sideEffects: ALL side effects (state changes, I/O, DB, network, etc.)
+            - exceptions: ALL exception types with specific trigger conditions
+
+            EXAMPLE (for UserService.createUser):
+            {
+              "goal": "Creates a new user account with validation: checks username uniqueness, validates email format, encrypts password, and persists to database. Returns user DTO with generated ID.",
+              "preconditions": [
+                "Database connection is available",
+                "Username must not be null or empty",
+                "Email must be valid format",
+                "Password must meet complexity requirements"
+              ],
+              "postconditions": [
+                "New user record exists in database with unique ID",
+                "Password is encrypted using BCrypt",
+                "Username is unique (no duplicates exist)",
+                "User DTO returned with all fields populated"
+              ],
+              "sideEffects": [
+                "INSERT into users table",
+                "Email notification sent to user",
+                "Audit log entry created",
+                "Cache invalidated for user list"
+              ],
+              "exceptions": [
+                "IllegalArgumentException when username is null/empty",
+                "IllegalArgumentException when email format is invalid",
+                "DuplicateKeyException when username already exists",
+                "DataAccessException when database operation fails"
+              ]
+            }
             """;
 
         String userPrompt = String.format("""
-            Analyze the following method and extract its intent and contract:
-            
+            Analyze the following method and extract its COMPLETE intent and contract:
+
+            ## Method Signature
             Class: %s
             Method: %s(%s)
             Return Type: %s
             Annotations: %s
-            
-            Documentation Contract:
+
+            ## Source Code
+            ```java
+            %s
+            ```
+
+            ## Control Flow Graph
+            %s
+
+            ## Documentation Contract
             - Parameters: %s
             - Returns: %s
             - Throws: %s
             - Business Rules: %s
-            
-            Respond with valid JSON matching this schema:
+
+            IMPORTANT:
+            - Analyze the ACTUAL code implementation, not just the signature
+            - Look at IF conditions, loops, exceptions to understand behavior
+            - Identify business rules from variable names and logic
+            - Consider Spring annotations (@Transactional, @Cacheable, etc.)
+            - Check for validation, null checks, error handling
+
+            Respond with COMPLETE JSON (use the example format from system prompt):
             {
-              "goal": "string",
-              "preconditions": ["string"],
-              "postconditions": ["string"],
-              "sideEffects": ["string"],
-              "exceptions": ["string"]
+              "goal": "...",
+              "preconditions": [...],
+              "postconditions": [...],
+              "sideEffects": [...],
+              "exceptions": [...]
             }
             """,
             context.className(),
@@ -139,6 +194,8 @@ public class ReasoningEngine {
             formatParams(context.parameters()),
             context.returnType(),
             String.join(", ", context.annotations()),
+            context.sourceCode() != null ? context.sourceCode() : "Not available",
+            formatCFG(context.controlFlow().nodes()),
             context.docContract() != null ? context.docContract().params() : "{}",
             context.docContract() != null ? context.docContract().returns() : "not specified",
             context.docContract() != null ? context.docContract().throwsList() : "[]",
@@ -165,24 +222,158 @@ public class ReasoningEngine {
     public ScenarioTree generateScenarios(@NotNull MethodContext context,
                                            @NotNull IntentOutput intentOutput) throws LLMProvider.LLMException {
         String systemPrompt = """
-            You are designing detailed test scenarios for a Java method.
-            For EACH scenario, provide a complete TestCaseSpecification in Given-When-Then format.
-            
-            Each test case must include:
-            - testName: Unique test method name (snake_case or camelCase)
-            - description: Clear description of what is being tested
-            - given: Setup including fixtures, mocks, preconditions
-            - when: Action under test (method call)
-            - then: Expected results with specific assertions
-            
-            Cover all scenario types:
-            - HAPPY: Normal successful execution
-            - ERROR: Exception handling and error paths
-            - BOUNDARY: Edge cases and boundary conditions
-            - STATE: State-dependent behavior
-            - PERFORMANCE: Performance-related tests (if applicable)
-            
-            Respond with JSON containing complete scenario tree with test case specifications.
+            You are a QA Architect designing comprehensive test scenarios for a Java method.
+
+            CRITICAL REQUIREMENTS:
+            - Create ONE TestCaseSpecification for EACH branch in the Control Flow Graph
+            - Each specification must be COMPLETE with Given-When-Then details
+            - Be SPECIFIC with actual values, not generic descriptions
+            - Include ALL mocks with their stubbings
+            - Include ALL assertions with expected values
+
+            EACH TestCaseSpecification MUST include:
+            - testName: should_{expectedResult}_when_{condition} format
+            - description: What is being tested (in Russian for @DisplayName)
+            - given: Complete setup with fixtures, mocks, stubbings, preconditions
+            - when: Exact method call with arguments
+            - then: All assertions with specific expected values
+
+            EXAMPLE (for UserService.createUser with if/else):
+
+            {
+              "root": {"id": "S0", "description": "All scenarios", "testCaseSpec": null},
+              "children": [
+                {
+                  "id": "S1",
+                  "type": "HAPPY",
+                  "description": "Happy path - user created successfully",
+                  "inputConditions": "Valid DTO with unique username",
+                  "expectedOutcome": "User created and saved to database",
+                  "shouldThrow": false,
+                  "testCaseSpec": {
+                    "testName": "should_createUser_when_dtoValid_and_usernameUnique",
+                    "description": "Создает пользователя когда DTO валиден и username уникален",
+                    "given": {
+                      "fixtures": [
+                        {
+                          "variableName": "userDto",
+                          "className": "UserDTO",
+                          "creationCode": "UserDTO.builder().username(\"newuser\").email(\"test@example.com\").password(\"Pass123!\").build()"
+                        }
+                      ],
+                      "mocks": [
+                        {
+                          "variableName": "userRepository",
+                          "className": "UserRepository",
+                          "stubbings": [
+                            {"method": "existsByUsername", "args": ["newuser"], "returns": false}
+                          ]
+                        },
+                        {
+                          "variableName": "passwordEncoder",
+                          "className": "PasswordEncoder",
+                          "stubbings": [
+                            {"method": "encode", "args": ["Pass123!"], "returns": "$2a$10$encoded"}
+                          ]
+                        }
+                      ],
+                      "preconditions": ["Database connection available", "Username 'newuser' does not exist"],
+                      "testData": ["Valid UserDTO with unique username"]
+                    },
+                    "when": {
+                      "action": "Create user with valid DTO",
+                      "methodCall": "userService.createUser(userDto)",
+                      "arguments": ["userDto"],
+                      "expectsException": false,
+                      "expectedExceptionType": null
+                    },
+                    "then": {
+                      "assertions": [
+                        {
+                          "description": "Returned DTO is not null",
+                          "actualExpression": "result",
+                          "expectedValue": "not null",
+                          "type": "NOT_NULL"
+                        },
+                        {
+                          "description": "Returned DTO has correct username",
+                          "actualExpression": "result.getUsername()",
+                          "expectedValue": "newuser",
+                          "type": "EQUALS"
+                        },
+                        {
+                          "description": "Password is encrypted",
+                          "actualExpression": "result.getPassword()",
+                          "expectedValue": "$2a$10$...",
+                          "type": "STARTS_WITH"
+                        }
+                      ],
+                      "expectedReturnValue": "UserDTO with id, username, email",
+                      "stateChanges": ["User record inserted into database"],
+                      "sideEffects": ["Email sent to user"]
+                    }
+                  }
+                },
+                {
+                  "id": "S2",
+                  "type": "ERROR",
+                  "description": "Error path - username already exists",
+                  "inputConditions": "DTO with existing username",
+                  "expectedOutcome": "IllegalArgumentException thrown",
+                  "shouldThrow": true,
+                  "testCaseSpec": {
+                    "testName": "should_throwException_when_usernameExists",
+                    "description": "Выбрасывает исключение когда username существует",
+                    "given": {
+                      "fixtures": [
+                        {
+                          "variableName": "existingUserDto",
+                          "className": "UserDTO",
+                          "creationCode": "UserDTO.builder().username(\"existing\").email(\"test@example.com\").build()"
+                        }
+                      ],
+                      "mocks": [
+                        {
+                          "variableName": "userRepository",
+                          "className": "UserRepository",
+                          "stubbings": [
+                            {"method": "existsByUsername", "args": ["existing"], "returns": true}
+                          ]
+                        }
+                      ],
+                      "preconditions": ["Username 'existing' already exists in database"],
+                      "testData": ["DTO with duplicate username"]
+                    },
+                    "when": {
+                      "action": "Try to create user with existing username",
+                      "methodCall": "userService.createUser(existingUserDto)",
+                      "arguments": ["existingUserDto"],
+                      "expectsException": true,
+                      "expectedExceptionType": "IllegalArgumentException"
+                    },
+                    "then": {
+                      "assertions": [
+                        {
+                          "description": "Exception is thrown",
+                          "actualExpression": "thrown exception",
+                          "expectedValue": "IllegalArgumentException",
+                          "type": "IS_INSTANCE_OF"
+                        },
+                        {
+                          "description": "Exception message contains username",
+                          "actualExpression": "exception.getMessage()",
+                          "expectedValue": "Username already exists",
+                          "type": "CONTAINS"
+                        }
+                      ],
+                      "expectedReturnValue": null,
+                      "stateChanges": [],
+                      "sideEffects": []
+                    }
+                  }
+                }
+              ]
+            }
             """;
 
         String userPrompt = String.format("""
