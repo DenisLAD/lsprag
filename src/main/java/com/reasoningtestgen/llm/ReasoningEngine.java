@@ -222,33 +222,33 @@ public class ReasoningEngine {
     public ScenarioTree generateScenarios(@NotNull MethodContext context,
                                            @NotNull IntentOutput intentOutput) throws LLMProvider.LLMException {
         String systemPrompt = """
-            You are a QA Architect designing comprehensive test scenarios for a Java method.
+            Вы — QA Architect, проектирующий комплексные тестовые сценарии для Java метода.
 
-            CRITICAL REQUIREMENTS:
-            - Create ONE TestCaseSpecification for EACH branch in the Control Flow Graph
-            - Each specification must be COMPLETE with Given-When-Then details
-            - Be SPECIFIC with actual values, not generic descriptions
-            - Include ALL mocks with their stubbings
-            - Include ALL assertions with expected values
+            КРИТИЧЕСКИ ВАЖНО:
+            - Создайте ОДНУ TestCaseSpecification для КАЖДОЙ ветки в Control Flow Graph
+            - Каждая спецификация должна быть ПОЛНОЙ с деталями Given-When-Then
+            - Будьте КОНКРЕТНЫ с реальными значениями, а не общими описаниями
+            - Включите ВСЕ моки с их stubbings
+            - Включите ВСЕ assertions с ожидаемыми значениями
 
-            EACH TestCaseSpecification MUST include:
-            - testName: should_{expectedResult}_when_{condition} format
-            - description: What is being tested (in Russian for @DisplayName)
-            - given: Complete setup with fixtures, mocks, stubbings, preconditions
-            - when: Exact method call with arguments
-            - then: All assertions with specific expected values
+            КАЖДАЯ TestCaseSpecification ДОЛЖНА включать:
+            - testName: формат should_{ожидаемыйРезультат}_when_{условие}
+            - description: Что тестируется (на русском для @DisplayName)
+            - given: Полная подготовка с fixtures, mocks, stubbings, preconditions
+            - when: Точный вызов метода с аргументами
+            - then: Все assertions с конкретными ожидаемыми значениями
 
-            EXAMPLE (for UserService.createUser with if/else):
+            ПРИМЕР (для UserService.createUser с if/else):
 
             {
-              "root": {"id": "S0", "description": "All scenarios", "testCaseSpec": null},
+              "root": {"id": "S0", "description": "Все сценарии", "testCaseSpec": null},
               "children": [
                 {
                   "id": "S1",
                   "type": "HAPPY",
-                  "description": "Happy path - user created successfully",
-                  "inputConditions": "Valid DTO with unique username",
-                  "expectedOutcome": "User created and saved to database",
+                  "description": "Happy path - пользователь успешно создан",
+                  "inputConditions": "Валидный DTO с уникальным username",
+                  "expectedOutcome": "Пользователь создан и сохранен в БД",
                   "shouldThrow": false,
                   "testCaseSpec": {
                     "testName": "should_createUser_when_dtoValid_and_usernameUnique",
@@ -277,11 +277,11 @@ public class ReasoningEngine {
                           ]
                         }
                       ],
-                      "preconditions": ["Database connection available", "Username 'newuser' does not exist"],
-                      "testData": ["Valid UserDTO with unique username"]
+                      "preconditions": ["Подключение к БД доступно", "Username 'newuser' не существует"],
+                      "testData": ["Валидный UserDTO с уникальным username"]
                     },
                     "when": {
-                      "action": "Create user with valid DTO",
+                      "action": "Создать пользователя с валидным DTO",
                       "methodCall": "userService.createUser(userDto)",
                       "arguments": ["userDto"],
                       "expectsException": false,
@@ -290,36 +290,36 @@ public class ReasoningEngine {
                     "then": {
                       "assertions": [
                         {
-                          "description": "Returned DTO is not null",
+                          "description": "Возвращенный DTO не null",
                           "actualExpression": "result",
                           "expectedValue": "not null",
                           "type": "NOT_NULL"
                         },
                         {
-                          "description": "Returned DTO has correct username",
+                          "description": "DTO имеет правильный username",
                           "actualExpression": "result.getUsername()",
                           "expectedValue": "newuser",
                           "type": "EQUALS"
                         },
                         {
-                          "description": "Password is encrypted",
+                          "description": "Пароль зашифрован",
                           "actualExpression": "result.getPassword()",
                           "expectedValue": "$2a$10$...",
                           "type": "STARTS_WITH"
                         }
                       ],
-                      "expectedReturnValue": "UserDTO with id, username, email",
-                      "stateChanges": ["User record inserted into database"],
-                      "sideEffects": ["Email sent to user"]
+                      "expectedReturnValue": "UserDTO с id, username, email",
+                      "stateChanges": ["Запись пользователя вставлена в БД"],
+                      "sideEffects": ["Email отправлен пользователю"]
                     }
                   }
                 },
                 {
                   "id": "S2",
                   "type": "ERROR",
-                  "description": "Error path - username already exists",
-                  "inputConditions": "DTO with existing username",
-                  "expectedOutcome": "IllegalArgumentException thrown",
+                  "description": "Error path - username уже существует",
+                  "inputConditions": "DTO с существующим username",
+                  "expectedOutcome": "IllegalArgumentException брошен",
                   "shouldThrow": true,
                   "testCaseSpec": {
                     "testName": "should_throwException_when_usernameExists",
@@ -341,11 +341,11 @@ public class ReasoningEngine {
                           ]
                         }
                       ],
-                      "preconditions": ["Username 'existing' already exists in database"],
-                      "testData": ["DTO with duplicate username"]
+                      "preconditions": ["Username 'existing' уже существует в БД"],
+                      "testData": ["DTO с дублирующимся username"]
                     },
                     "when": {
-                      "action": "Try to create user with existing username",
+                      "action": "Попытка создать пользователя с существующим username",
                       "methodCall": "userService.createUser(existingUserDto)",
                       "arguments": ["existingUserDto"],
                       "expectsException": true,
@@ -354,13 +354,13 @@ public class ReasoningEngine {
                     "then": {
                       "assertions": [
                         {
-                          "description": "Exception is thrown",
+                          "description": "Исключение брошено",
                           "actualExpression": "thrown exception",
                           "expectedValue": "IllegalArgumentException",
                           "type": "IS_INSTANCE_OF"
                         },
                         {
-                          "description": "Exception message contains username",
+                          "description": "Сообщение исключения содержит username",
                           "actualExpression": "exception.getMessage()",
                           "expectedValue": "Username already exists",
                           "type": "CONTAINS"
@@ -377,66 +377,66 @@ public class ReasoningEngine {
             """;
 
         String userPrompt = String.format("""
-            Generate detailed test scenarios with Given-When-Then specifications for method %s.%s
+            Создайте детальные тестовые сценарии со спецификациями Given-When-Then для метода %s.%s
 
-            ## Method Information
-            Class: %s
-            Method: %s(%s)
-            Return Type: %s
-            Annotations: %s
+            ## Информация о методе
+            Класс: %s
+            Метод: %s(%s)
+            Возвращаемый тип: %s
+            Аннотации: %s
 
-            ## Control Flow Graph
+            ## Граф потока управления (CFG)
             %s
 
-            ## Intent Analysis
+            ## Анализ намерений (Intent Analysis)
             - Goal: %s
             - Preconditions: %s
             - Postconditions: %s
             - Exceptions: %s
 
-            ## Complexity Metrics
+            ## Метрики сложности
             - Cyclomatic Complexity: %d
             - Branch Count: %d
             - Loop Count: %d
 
-            ## Dependencies
+            ## Зависимости
             %s
 
-            ## Documentation Contract
-            - Parameters: %s
-            - Returns: %s
-            - Throws: %s
-            - Business Rules: %s
+            ## Документация и контракт
+            - Параметры: %s
+            - Возвращает: %s
+            - Бросает: %s
+            - Бизнес правила: %s
 
-            Create a scenario tree where EACH scenario has a complete testCaseSpec with:
+            Создайте дерево сценариев где КАЖДЫЙ сценарий имеет полную testCaseSpec с:
             - testName, description
             - given: { fixtures, mocks, preconditions, testData }
             - when: { action, methodCall, arguments, expectsException, expectedExceptionType }
             - then: { assertions[], expectedReturnValue, stateChanges, sideEffects }
 
-            Respond with valid JSON matching this extended schema:
+            Ответьте валидным JSON соответствующим этой расширенной схеме:
             {
-              "root": {"id": "S0", "description": "All scenarios", "testCaseSpec": null},
+              "root": {"id": "S0", "description": "Все сценарии", "testCaseSpec": null},
               "children": [
                 {
                   "id": "S1",
                   "type": "HAPPY|ERROR|BOUNDARY|STATE|PERFORMANCE",
-                  "description": "string",
-                  "inputConditions": "string",
-                  "expectedOutcome": "string",
+                  "description": "строка",
+                  "inputConditions": "строка",
+                  "expectedOutcome": "строка",
                   "shouldThrow": boolean,
                   "children": [],
                   "testCaseSpec": {
-                    "testName": "should_expectedResult_when_condition",
-                    "description": "Detailed description",
+                    "testName": "should_ожидаемыйРезультат_when_условие",
+                    "description": "Подробное описание на русском",
                     "given": {
                       "fixtures": [{"variableName": "var", "className": "Type", "creationCode": "..."}],
                       "mocks": [{"variableName": "mock", "className": "Type", "stubbings": [...]}],
-                      "preconditions": ["state description"],
-                      "testData": ["data description"]
+                      "preconditions": ["описание состояния"],
+                      "testData": ["описание данных"]
                     },
                     "when": {
-                      "action": "Call method with params",
+                      "action": "Вызов метода с параметрами",
                       "methodCall": "object.method(arg1, arg2)",
                       "arguments": ["arg1", "arg2"],
                       "expectsException": false,
@@ -504,37 +504,37 @@ public class ReasoningEngine {
     public TestDesign designTests(@NotNull MethodContext context,
                                    @NotNull ScenarioTree scenarioTree) throws LLMProvider.LLMException {
         String systemPrompt = """
-            You are designing the test implementation strategy for a Java method.
-            Decide on:
-            - Test framework (JUnit 5 preferred, but respect existing tests)
-            - Naming convention for test methods
-            - Mocking strategy (Mockito, none, etc.)
-            - Whether to use parameterized tests
-            - Assertion library (AssertJ preferred)
-            
-            Respond with JSON containing:
-            - framework: JUNIT5, JUNIT4, or TESTNG
-            - namingConvention: Pattern like "should_{expected}_when_{condition}"
+            Вы проектируете стратегию реализации тестов для Java метода.
+            Определите:
+            - Test framework (JUnit 5 предпочтительно, но уважайте существующие тесты)
+            - Naming convention для тестовых методов
+            - Mocking strategy (Mockito, none, и т.д.)
+            - Использовать ли parameterized tests
+            - Assertion library (AssertJ предпочтительно)
+
+            Ответьте JSON содержащим:
+            - framework: JUNIT5, JUNIT4, или TESTNG
+            - namingConvention: Паттерн типа "should_{ожидаемыйРезультат}_when_{условие}"
             - mockingStrategy: NONE, MOCKITO_EXTEND_WITH, MOCKITO_RUNNER, POWERMOCK
             - useParameterized: boolean
             - assertionLibrary: JUNIT, ASSERTJ, HAMCREST, TRUTH
             """;
 
         String userPrompt = String.format("""
-            Design test implementation strategy for %s.%s
-            
-            Existing Tests (for style reference):
+            Спроектируйте стратегию реализации тестов для %s.%s
+
+            Существующие тесты (для参考 стиля):
             %s
-            
-            Dependencies:
+
+            Зависимости:
             %s
-            
-            Scenarios to cover: %d scenarios
-            
-            Respond with valid JSON matching this schema:
+
+            Сценарии для покрытия: %d сценариев
+
+            Ответьте валидным JSON соответствующим этой схеме:
             {
               "framework": "JUNIT5",
-              "namingConvention": "string",
+              "namingConvention": "строка",
               "mockingStrategy": "MOCKITO_EXTEND_WITH",
               "useParameterized": boolean,
               "assertionLibrary": "ASSERTJ"
@@ -626,23 +626,23 @@ public class ReasoningEngine {
                                               @NotNull ScenarioTree scenarioTree,
                                               @NotNull MethodContext context) throws LLMProvider.LLMException {
         String systemPrompt = """
-            You are a Senior Java Developer writing high-quality unit tests.
-            Generate complete test class code following the design specifications.
+            Вы — Senior Java Developer, пишущий высококачественные unit-тесты.
+            Сгенерируйте полный код тестового класса следуя спецификациям дизайна.
 
-            Guidelines:
-            - Use proper imports
-            - Follow naming conventions
-            - Include setup/teardown if needed
-            - Mock external dependencies appropriately
-            - Write clear, descriptive test methods
-            - Each test should be isolated and repeatable
-            - Use realistic test data
+            Руководство:
+            - Используйте правильные импорты
+            - Следуйте соглашениям именования
+            - Включите setup/teardown если нужно
+            - Мокайте внешние зависимости соответствующе
+            - Пишите четкие, описательные тестовые методы
+            - Каждый тест должен быть изолированным и повторяемым
+            - Используйте реалистичные тестовые данные
 
-            The code must be valid Java that compiles without errors.
+            Код должен быть валидным Java который компилируется без ошибок.
             """;
 
         String userPrompt = String.format("""
-            Generate unit tests for %s.%s
+            Сгенерируйте unit тесты для %s.%s
 
             Test Design:
             - Framework: %s
@@ -651,16 +651,16 @@ public class ReasoningEngine {
             - Use Parameterized: %s
             - Assertion Library: %s
 
-            Scenarios to cover:
+            Сценарии для покрытия:
             %s
 
-            Method Context:
+            Контекст метода:
             - Return Type: %s
             - Parameters: %s
             - Dependencies: %s
 
-            Generate the complete test class code as a single Java file.
-            Include all necessary imports, annotations, and helper methods.
+            Сгенерируйте ПОЛНЫЙ код тестового класса как единый Java файл.
+            Включите все необходимые импорты, аннотации, и вспомогательные методы.
             """,
             context.className(),
             context.methodName(),
