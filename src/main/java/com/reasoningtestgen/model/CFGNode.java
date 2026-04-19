@@ -104,4 +104,44 @@ public record CFGNode(
             case SAFE_CAST -> "SAFE_CAST";
         };
     }
+    
+    /**
+     * Accept visitor for double dispatch
+     * Implements Visitor pattern to avoid switch statements
+     */
+    public <T> T accept(CFGNodeVisitor<T> visitor) {
+        return switch (type) {
+            case IF -> visitor.visitIf(this);
+            case ELSE -> visitor.visitElse(this);
+            case SWITCH -> visitor.visitSwitch(this);
+            case TRY -> visitor.visitTry(this);
+            case CATCH -> visitor.visitCatch(this);
+            case LOOP -> visitor.visitLoop(this);
+            case RETURN -> visitor.visitReturn(this);
+            case THROW -> visitor.visitThrow(this);
+            case PATTERN_MATCHING -> visitor.visitPatternMatching(this);
+            case YIELD -> visitor.visitYield(this);
+            case ASSERT -> visitor.visitAssert(this);
+            case LAMBDA -> visitor.visitLambda(this);
+            case METHOD_REF -> visitor.visitMethodRef(this);
+            case STREAM_FILTER -> visitor.visitStreamFilter(this);
+            case STREAM_MAP -> visitor.visitStreamMap(this);
+            case STREAM_FOREACH -> visitor.visitStreamForeach(this);
+            case OPTIONAL_IF_PRESENT -> visitor.visitOptionalIfPresent(this);
+            case OPTIONAL_IF_EMPTY -> visitor.visitOptionalIfEmpty(this);
+            case TRY_WITH_RESOURCES -> visitor.visitTryWithResources(this);
+            case SYNCHRONIZED -> visitor.visitSynchronized(this);
+            case REACTIVE_FILTER -> visitor.visitReactiveFilter(this);
+            case REACTIVE_MAP -> visitor.visitReactiveMap(this);
+            case REACTIVE_ON_ERROR -> visitor.visitReactiveOnError(this);
+            case RECORD_PATTERN -> visitor.visitRecordPattern(this);
+            case GUARDED_PATTERN -> visitor.visitGuardedPattern(this);
+            case ANONYMOUS_CLASS -> visitor.visitAnonymousClass(this);
+            case COMPACT_CONSTRUCTOR -> visitor.visitCompactConstructor(this);
+            case MULTI_CATCH -> visitor.visitMultiCatch(this);
+            case NULL_SAFE_CALL -> visitor.visitNullSafeCall(this);
+            case ELVIS_OPERATOR -> visitor.visitElvisOperator(this);
+            case SAFE_CAST -> visitor.visitSafeCast(this);
+        };
+    }
 }
