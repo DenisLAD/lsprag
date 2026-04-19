@@ -63,7 +63,12 @@ class MethodContextTest {
                 List.of(),
                 docContract,
                 List.of(),
-                complexity
+                complexity,
+                false,
+                false,
+                false,
+                "",
+                null
             );
             
             // Then
@@ -288,7 +293,12 @@ class MethodContextTest {
             List.of(),
             new DocContract(Map.of(), null, List.of(), List.of()),
             List.of(),
-            new ComplexityMetrics(1, 0, 0, 0)
+            new ComplexityMetrics(1, 0, 0, 0),
+            false,
+            false,
+            false,
+            "",
+            null
         );
     }
 }

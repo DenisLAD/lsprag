@@ -171,7 +171,12 @@ public class PluginIntegrationTest {
                 )
             ),
             java.util.List.of(),
-            new com.reasoningtestgen.model.ComplexityMetrics(9, 2, 9, 0)
+            new com.reasoningtestgen.model.ComplexityMetrics(9, 2, 9, 0),
+            false,
+            false,
+            false,
+            "",
+            null
         );
     }
 

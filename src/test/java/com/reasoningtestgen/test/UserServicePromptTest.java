@@ -218,21 +218,8 @@ public class UserServicePromptTest extends LightJavaCodeInsightFixtureTestCase {
         """);
 
         // Получаем PSI метод createUser
-        PsiFile[] files = myFixture.getFiles();
-        PsiJavaFile serviceFile = null;
-        
-        for (PsiFile file : files) {
-            if (file.getName().equals("UserService.java")) {
-                serviceFile = (PsiJavaFile) file;
-                break;
-            }
-        }
-        
-        assertNotNull("UserService.java should exist", serviceFile);
-        
-        PsiClass serviceClass = serviceFile.getClasses()[0];
-        assertEquals("UserService", serviceClass.getName());
-        
+        PsiFile file = myFixture.getFile();
+        PsiClass serviceClass = ((PsiJavaFile) file).getClasses()[0];
         PsiMethod createUserMethod = serviceClass.findMethodsByName("createUser", false)[0];
         assertNotNull("createUser method should exist", createUserMethod);
 

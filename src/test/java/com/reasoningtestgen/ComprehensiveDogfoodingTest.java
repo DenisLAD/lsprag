@@ -209,7 +209,12 @@ public class ComprehensiveDogfoodingTest {
                 List.of("Must include all context sections in user prompt")
             ),
             List.of(),
-            new ComplexityMetrics(8, 2, 8, 0)
+            new ComplexityMetrics(8, 2, 8, 0),
+            false,
+            false,
+            false,
+            "",
+            null
         );
     }
 
@@ -266,7 +271,12 @@ public class ComprehensiveDogfoodingTest {
                 )
             ),
             List.of(),
-            new ComplexityMetrics(5, 1, 4, 2)
+            new ComplexityMetrics(5, 1, 4, 2),
+            false,
+            false,
+            false,
+            "",
+            null
         );
     }
 
@@ -314,7 +324,12 @@ public class ComprehensiveDogfoodingTest {
                 )
             ),
             List.of(),
-            new ComplexityMetrics(12, 2, 12, 0)
+            new ComplexityMetrics(12, 2, 12, 0),
+            false,
+            false,
+            false,
+            "",
+            null
         );
     }
 
@@ -389,7 +404,12 @@ public class ComprehensiveDogfoodingTest {
                 )
             ),
             List.of(),
-            new ComplexityMetrics(10, 3, 10, 1)
+            new ComplexityMetrics(10, 3, 10, 1),
+            false,
+            false,
+            false,
+            "",
+            null
         );
     }
 
@@ -442,7 +462,12 @@ public class ComprehensiveDogfoodingTest {
                 )
             ),
             List.of(),
-            new ComplexityMetrics(7, 2, 7, 1)
+            new ComplexityMetrics(7, 2, 7, 1),
+            false,
+            false,
+            false,
+            "",
+            null
         );
     }
 

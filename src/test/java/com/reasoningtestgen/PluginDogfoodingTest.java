@@ -271,7 +271,12 @@ public class PluginDogfoodingTest {
             dataTransformations,
             docContract,
             existingTests,
-            complexity
+            complexity,
+            false,
+            false,
+            false,
+            "",
+            null
         );
     }
 
