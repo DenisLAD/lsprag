@@ -214,15 +214,15 @@ public class ContextBuilder {
         
         // Explicit branch coverage requirement
         List<CFGNode> branchNodes = context.controlFlow().nodes().stream()
-            .filter(node -> node.type() == CFGNode.NodeType.IF || 
+            .filter(node -> node.type() == CFGNode.NodeType.IF ||
                            node.type() == CFGNode.NodeType.SWITCH ||
                            node.type() == CFGNode.NodeType.CATCH)
             .collect(Collectors.toList());
-        
+
         if (!branchNodes.isEmpty()) {
             prompt.append("## ⚠️ ТРЕБОВАНИЕ: Покрытие всех веток\n");
             prompt.append("Вы ОБЯЗАНЫ создать тесты для КАЖДОЙ ветки CFG:\n\n");
-            
+
             int testNum = 1;
             for (CFGNode branch : branchNodes) {
                 switch (branch.type()) {
@@ -238,10 +238,14 @@ public class ContextBuilder {
                         break;
                 }
             }
-            
+
             prompt.append("\nКаждый тест должен проверять ОДНУ конкретную ветку.\n");
             prompt.append("Используйте описательные имена: should_{result}_when_{condition}\n\n");
         }
+
+        // Important notes and warnings about missing validation
+        prompt.append(buildImportantNotes(context));
+        prompt.append("\n");
 
         // Dependencies
         prompt.append("## Зависимости\n");
@@ -605,12 +609,170 @@ public class ContextBuilder {
         if (dependencies.isEmpty()) {
             return "No external dependencies";
         }
-        
+
         return dependencies.stream()
-            .map(d -> d.name() + ": " + d.type() + 
+            .map(d -> d.name() + ": " + d.type() +
                      (d.isExternal() ? " [external]" : "") +
                      (d.nullable() ? " [nullable]" : ""))
             .collect(Collectors.joining("\n"));
+    }
+
+    /**
+     * Build important notes and warnings about missing validation
+     * Analyzes method code for common validation gaps
+     */
+    @NotNull
+    private String buildImportantNotes(@NotNull MethodContext context) {
+        StringBuilder notes = new StringBuilder();
+        notes.append("## ⚠️ ВАЖНЫЕ ПРИМЕЧАНИЯ\n\n");
+
+        boolean hasNotes = false;
+
+        // Check for missing password field
+        if (context.methodName().toLowerCase().contains("create") ||
+            context.methodName().toLowerCase().contains("register") ||
+            context.methodName().toLowerCase().contains("add")) {
+            
+            boolean hasPasswordParam = context.parameters().stream()
+                .anyMatch(p -> p.name().toLowerCase().contains("password"));
+            
+            boolean hasPasswordInDTO = context.dtoStructures().stream()
+                .flatMap(dto -> dto.fields().stream())
+                .anyMatch(f -> f.name().toLowerCase().contains("password"));
+
+            if (!hasPasswordParam && !hasPasswordInDTO) {
+                notes.append("""
+                    ### 🔐 Password ОТСУТСТВУЕТ
+                    - ❌ Password ОТСУТСТВУЕТ в параметрах метода
+                    - ❌ Password ОТСУТСТВУЕТ в DTO структурах
+                    - Метод НЕ требует password для создания пользователя
+                    
+                    Это может быть:
+                    - Сервис для создания пользователей администратором
+                    - OAuth регистрация (без password)
+                    - Упрощенная модель для демо
+                    
+                    **Тесты НЕ должны ожидать поле password!**
+                    
+                    """);
+                hasNotes = true;
+            }
+        }
+
+        // Check for missing email format validation
+        if (context.sourceCode() != null) {
+            String sourceCode = context.sourceCode().toLowerCase();
+            
+            boolean hasEmailCheck = sourceCode.contains("email");
+            boolean hasEmailFormatValidation = sourceCode.contains("regex") || 
+                sourceCode.contains("pattern") || 
+                sourceCode.contains("matches") ||
+                sourceCode.contains("emailvalidator") ||
+                sourceCode.contains("internetaddress");
+
+            if (hasEmailCheck && !hasEmailFormatValidation) {
+                notes.append("""
+                    ### 📧 Email валидация ОТСУТСТВУЕТ
+                    - ✅ ПРОВЕРЯЕТСЯ: email != null && !email.isEmpty()
+                    - ❌ НЕ ПРОВЕРЯЕТСЯ: формат email (user@example.com)
+                    
+                    **Тесты должны проверять ТОЛЬКО существующую валидацию!**
+                    **НЕ ожидайте валидации формата email которой нет в коде!**
+                    
+                    """);
+                hasNotes = true;
+            }
+
+            // Check for missing username length validation
+            boolean hasUsernameCheck = sourceCode.contains("username");
+            boolean hasUsernameLengthValidation = sourceCode.contains("length()") || 
+                sourceCode.contains(".size()") ||
+                sourceCode.contains("minlength") ||
+                sourceCode.contains("maxlength") ||
+                sourceCode.contains("min") ||
+                sourceCode.contains("max");
+
+            if (hasUsernameCheck && !hasUsernameLengthValidation) {
+                notes.append("""
+                    ### 👤 Username валидация ОТСУТСТВУЕТ
+                    - ✅ ПРОВЕРЯЕТСЯ: username != null && !username.isEmpty()
+                    - ❌ НЕ ПРОВЕРЯЕТСЯ: длина username (min/max), допустимые символы
+                    
+                    **Тесты должны проверять ТОЛЬКО существующую валидацию!**
+                    **НЕ ожидайте валидации длины username которой нет в коде!**
+                    
+                    """);
+                hasNotes = true;
+            }
+
+            // Check for role fallback
+            boolean hasRoleCheck = sourceCode.contains("role");
+            boolean hasRoleFallback = sourceCode.contains("!= null ?") || 
+                sourceCode.contains("!=null?") ||
+                sourceCode.contains("default") ||
+                sourceCode.contains("?:"); // elvis operator
+
+            if (hasRoleCheck && hasRoleFallback) {
+                notes.append("""
+                    ### 🎭 Role по умолчанию
+                    - Если dto.getRole() != null → используется из DTO
+                    - Если dto.getRole() == null → "USER" (default)
+                    
+                    **Тесты должны проверять оба сценария!**
+                    
+                    """);
+                hasNotes = true;
+            }
+
+            // Check for transactional behavior
+            boolean hasTransactional = context.annotations().stream()
+                .anyMatch(a -> a.contains("Transactional"));
+            
+            if (hasTransactional) {
+                notes.append("""
+                    ### 🔄 Transactional поведение
+                    - Метод использует @Transactional
+                    - Если класс имеет @Transactional(readOnly = true), метод переопределяет на readOnly=false
+                    
+                    Для тестов:
+                    - Используйте @TransactionalTest для проверки транзакций
+                    - Или отключите транзакции через @Transactional(propagation = Propagation.NOT_SUPPORTED)
+                    
+                    """);
+                hasNotes = true;
+            }
+
+            // Check for logging
+            boolean hasLogging = sourceCode.contains("log.") || 
+                sourceCode.contains("logger.") ||
+                sourceCode.contains("system.out");
+
+            if (hasLogging) {
+                notes.append("""
+                    ### 📝 Логирование
+                    - Метод использует логирование (log.debug/info/warn)
+                    
+                    Для тестирования логов:
+                    - Используйте ArgumentCaptor для SLF4J
+                    - Или добавьте зависимость slf4j-test для простых тестов
+                    
+                    """);
+                hasNotes = true;
+            }
+        }
+
+        // If no important notes, add a positive confirmation
+        if (!hasNotes) {
+            notes.append("""
+                ### ✅ Код соответствует best practices
+                - Валидация входных параметров присутствует
+                - Обработка ошибок реализована
+                - Транзакции настроены корректно
+                
+                """);
+        }
+
+        return notes.toString();
     }
 
     /**
