@@ -238,7 +238,29 @@ public class ContextBuilder {
                 }
             }
 
-            prompt.append("\nКаждый тест должен проверять ОДНУ конкретную ветку.\n");
+            prompt.append("\n### Пример для if/else:\n");
+            prompt.append("```java\n");
+            prompt.append("@Test\n@DisplayName(\"Возвращает OK когда объект найден\")\n");
+            prompt.append("void should_returnOk_when_objectFound() {\n");
+            prompt.append("    // Given: сервис возвращает не-null\n");
+            prompt.append("    when(service.getById(id)).thenReturn(new DataStorageResponse());\n\n");
+            prompt.append("    // When\n");
+            prompt.append("    ResponseEntity<DataStorageResponse> result = controller.getById(id);\n\n");
+            prompt.append("    // Then: проверяем что вернул OK\n");
+            prompt.append("    assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);\n");
+            prompt.append("}\n\n");
+            prompt.append("@Test\n@DisplayName(\"Возвращает 404 когда объект не найден\")\n");
+            prompt.append("void should_returnNotFound_when_objectNotFound() {\n");
+            prompt.append("    // Given: сервис возвращает null\n");
+            prompt.append("    when(service.getById(id)).thenReturn(null);\n\n");
+            prompt.append("    // When\n");
+            prompt.append("    ResponseEntity<DataStorageResponse> result = controller.getById(id);\n\n");
+            prompt.append("    // Then: проверяем что вернул 404\n");
+            prompt.append("    assertThat(result.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);\n");
+            prompt.append("}\n");
+            prompt.append("```\n\n");
+            
+            prompt.append("Каждый тест должен проверять ОДНУ конкретную ветку.\n");
             prompt.append("Используйте описательные имена: should_{result}_when_{condition}\n\n");
         }
 

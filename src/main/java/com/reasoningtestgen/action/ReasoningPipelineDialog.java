@@ -318,133 +318,132 @@ public class ReasoningPipelineDialog extends DialogWrapper {
         runPipelineButton.setEnabled(false);
         saveButton.setEnabled(false);
         progressBar.setVisible(true);
-        progressBar.setIndeterminate(true);
+        progressBar.setIndeterminate(false);
+        progressBar.setValue(0);
         statusLabel.setText("  🚀 Starting reasoning pipeline...");
 
-        ProgressManager.getInstance().run(new Task.Backgroundable(project, "Running Reasoning Pipeline") {
-            @Override
-            public void run(@NotNull ProgressIndicator indicator) {
-                try {
-                    indicator.setIndeterminate(false);
-                    statusLabel.setText("  ⚙️  Initializing LLM provider...");
-                    
-                    // Initialize LLM provider
-                    PluginSettings settings = PluginSettings.getInstance();
-                    LLMProvider llmProvider = LLMProviderFactory.createProvider(settings);
-                    PromptHistoryService historyService = new PromptHistoryService(project.getName());
+        // Run pipeline in background thread, update UI in EDT
+        new Thread(() -> {
+            try {
+                statusLabel.setText("  ⚙️  Initializing LLM provider...");
+                progressBar.setValue(5);
 
-                    // Create reasoning engine
-                    ReasoningEngine reasoningEngine = new ReasoningEngine(
-                        settings,
-                        historyService,
-                        project
-                    );
+                // Initialize LLM provider
+                PluginSettings settings = PluginSettings.getInstance();
+                LLMProvider llmProvider = LLMProviderFactory.createProvider(settings);
+                PromptHistoryService historyService = new PromptHistoryService(project.getName());
 
-                    // ===== STEP 1: Intent Analysis =====
-                    LOG.info("Step 1/5: Intent Analysis");
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        statusLabel.setText("  🎯 Step 1/5: Analyzing method intent and contract...");
-                        pipelineTabs.setSelectedIndex(0); // Switch to Prompt tab first, then Intent
-                        progressBar.setValue(20);
-                    });
+                // Create reasoning engine
+                ReasoningEngine reasoningEngine = new ReasoningEngine(
+                    settings,
+                    historyService,
+                    project
+                );
 
-                    intentOutput = reasoningEngine.analyzeIntent(methodContext);
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        pipelineTabs.setSelectedIndex(1); // Switch to Intent tab after completion
-                    });
-                    updateIntentDisplay();
+                // ===== STEP 1: Intent Analysis =====
+                LOG.info("Step 1/5: Intent Analysis");
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    statusLabel.setText("  🎯 Step 1/5: Analyzing method intent and contract...");
+                    pipelineTabs.setSelectedIndex(1); // Switch to Intent tab
+                    progressBar.setValue(20);
+                });
 
-                    // ===== STEP 2: Scenario Mapping =====
-                    LOG.info("Step 2/5: Scenario Mapping");
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        statusLabel.setText("  🌳 Step 2/5: Building scenario tree from CFG...");
-                        pipelineTabs.setSelectedIndex(2);
-                        progressBar.setValue(40);
-                    });
+                intentOutput = reasoningEngine.analyzeIntent(methodContext);
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    pipelineTabs.setSelectedIndex(1); // Switch to Intent tab after completion
+                });
+                updateIntentDisplay();
 
-                    scenarioTree = reasoningEngine.generateScenarios(methodContext, intentOutput);
-                    updateScenariosDisplay();
+                // ===== STEP 2: Scenario Mapping =====
+                LOG.info("Step 2/5: Scenario Mapping");
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    statusLabel.setText("  🌳 Step 2/5: Building scenario tree from CFG...");
+                    pipelineTabs.setSelectedIndex(2);
+                    progressBar.setValue(40);
+                });
 
-                    // ===== STEP 3: Test Design =====
-                    LOG.info("Step 3/5: Test Design");
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        statusLabel.setText("  📋 Step 3/5: Selecting test framework and mocking strategy...");
-                        pipelineTabs.setSelectedIndex(3);
-                        progressBar.setValue(60);
-                    });
+                scenarioTree = reasoningEngine.generateScenarios(methodContext, intentOutput);
+                updateScenariosDisplay();
 
-                    testDesign = reasoningEngine.designTests(methodContext, scenarioTree);
-                    updateDesignDisplay();
+                // ===== STEP 3: Test Design =====
+                LOG.info("Step 3/5: Test Design");
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    statusLabel.setText("  📋 Step 3/5: Selecting test framework and mocking strategy...");
+                    pipelineTabs.setSelectedIndex(3);
+                    progressBar.setValue(60);
+                });
 
-                    // ===== STEP 4: Code Generation =====
-                    LOG.info("Step 4/5: Code Generation");
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        statusLabel.setText("  ✨ Step 4/5: Generating test code with JUnit/Mockito...");
-                        pipelineTabs.setSelectedIndex(4);
-                        progressBar.setValue(80);
-                    });
+                testDesign = reasoningEngine.designTests(methodContext, scenarioTree);
+                updateDesignDisplay();
 
-                    generatedCode = reasoningEngine.generateCode(testDesign, scenarioTree, methodContext);
-                    updateCodeDisplay();
+                // ===== STEP 4: Code Generation =====
+                LOG.info("Step 4/5: Code Generation");
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    statusLabel.setText("  ✨ Step 4/5: Generating test code with JUnit/Mockito...");
+                    pipelineTabs.setSelectedIndex(4);
+                    progressBar.setValue(80);
+                });
 
-                    // ===== STEP 5: Compiler Loop Validation =====
-                    LOG.info("Step 5/5: Compiler Loop Validation");
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        statusLabel.setText("  ✅ Step 5/5: Validating compilation and fixing errors...");
-                        pipelineTabs.setSelectedIndex(5);
-                        progressBar.setValue(90);
-                    });
+                generatedCode = reasoningEngine.generateCode(testDesign, scenarioTree, methodContext);
+                updateCodeDisplay();
 
-                    CompilerLoopEngine compilerLoop = new CompilerLoopEngine(
-                        project,
-                        llmProvider,
-                        historyService,
-                        settings.getMaxCorrectionAttempts(),
-                        settings.isCorrectUntilSuccess()
-                    );
+                // ===== STEP 5: Compiler Loop Validation =====
+                LOG.info("Step 5/5: Compiler Loop Validation");
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    statusLabel.setText("  ✅ Step 5/5: Validating compilation and fixing errors...");
+                    pipelineTabs.setSelectedIndex(5);
+                    progressBar.setValue(90);
+                });
 
-                    correctionResult = compilerLoop.runCompilerLoop(generatedCode, testDesign);
-                    updateValidationDisplay();
+                CompilerLoopEngine compilerLoop = new CompilerLoopEngine(
+                    project,
+                    llmProvider,
+                    historyService,
+                    settings.getMaxCorrectionAttempts(),
+                    settings.isCorrectUntilSuccess()
+                );
 
-                    // Complete
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        progressBar.setValue(100);
-                        progressBar.setIndeterminate(false);
-                        
-                        if (correctionResult.success()) {
-                            statusLabel.setText(String.format(
-                                "  ✓ Pipeline complete! Fixed in %d attempt(s)",
-                                correctionResult.attemptsCount()
-                            ));
-                        } else {
-                            statusLabel.setText(String.format(
-                                "  ⚠ Pipeline complete with %d remaining error(s)",
-                                correctionResult.remainingErrors().size()
-                            ));
-                        }
+                correctionResult = compilerLoop.runCompilerLoop(generatedCode, testDesign);
+                updateValidationDisplay();
 
-                        runPipelineButton.setEnabled(true);
-                        saveButton.setEnabled(correctionResult.success());
-                    });
+                // Complete
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    progressBar.setValue(100);
+                    progressBar.setIndeterminate(false);
 
-                } catch (Exception e) {
-                    LOG.error("Pipeline failed", e);
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        statusLabel.setText("  ❌ Pipeline failed: " + e.getMessage());
-                        progressBar.setValue(0);
-                        progressBar.setVisible(false);
-                        runPipelineButton.setEnabled(true);
-                        
-                        // Show error in validation tab
-                        validationArea.setText("## ❌ Pipeline Error\n\n" +
-                            "**Error:** " + e.getClass().getSimpleName() + "\n\n" +
-                            "**Message:** " + e.getMessage() + "\n\n" +
-                            "**Check logs for details.**");
-                        pipelineTabs.setSelectedIndex(5);
-                    });
-                }
+                    if (correctionResult.success()) {
+                        statusLabel.setText(String.format(
+                            "  ✅ Pipeline complete! Fixed in %d attempt(s)",
+                            correctionResult.attemptsCount()
+                        ));
+                    } else {
+                        statusLabel.setText(String.format(
+                            "  ⚠️ Pipeline complete with %d remaining error(s)",
+                            correctionResult.remainingErrors().size()
+                        ));
+                    }
+
+                    runPipelineButton.setEnabled(true);
+                    saveButton.setEnabled(correctionResult.success());
+                });
+
+            } catch (Exception e) {
+                LOG.error("Pipeline failed", e);
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    statusLabel.setText("  ❌ Pipeline failed: " + e.getMessage());
+                    progressBar.setValue(0);
+                    progressBar.setVisible(false);
+                    runPipelineButton.setEnabled(true);
+
+                    // Show error in validation tab
+                    validationArea.setText("## ❌ Pipeline Error\n\n" +
+                        "**Error:** " + e.getClass().getSimpleName() + "\n\n" +
+                        "**Message:** " + e.getMessage() + "\n\n" +
+                        "**Check logs for details.**");
+                    pipelineTabs.setSelectedIndex(5);
+                });
             }
-        });
+        }).start();
     }
 
     /**
@@ -589,7 +588,7 @@ public class ReasoningPipelineDialog extends DialogWrapper {
     private void updateCodeDisplay() {
         if (generatedCode == null) return;
 
-        WriteCommandAction.runWriteCommandAction(project, () -> {
+        ApplicationManager.getApplication().invokeLater(() -> {
             codeEditor.getDocument().setText(generatedCode.javaCode());
 
             // Update syntax highlighter
@@ -601,7 +600,7 @@ public class ReasoningPipelineDialog extends DialogWrapper {
                     )
                 );
             }
-            
+
             // Enable save button when code is generated
             saveButton.setEnabled(true);
         });

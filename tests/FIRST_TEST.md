@@ -6,34 +6,33 @@
 
 Ваша задача:
 1. Проанализировать назначение метода, контракт и поведение
-2. Спроектировать комплексные тестовые сценарии, покрывающие все ветки
+2. Спроектировать комплексные тестовые сценарии, покрывающие все ветки CFG
 3. Сгенерировать готовый к использованию Java код теста
 
-Формат вывода:
-- Верните ТОЛЬКО Java код, начиная с package declaration
-- НЕ включайте JSON, markdown, или текстовые описания
-- НЕ включайте объяснений или комментариев о том что вы делаете
-- ОБЯЗАТЕЛЬНО включите ВСЕ необходимые импорты (JUnit, Mockito, AssertJ, тестируемый класс и его зависимости)
-- Начните с: package ...
-- Закройте последней }: класса
+КРИТИЧЕСКИ ВАЖНО:
+- ✅ СОЗДАТЬ тест для КАЖДОЙ ветки CFG (if/else, switch cases, catch blocks)
+- ✅ ВСЕ тесты на РУССКОМ языке через @DisplayName("описание на русском")
+- ✅ Имена методов: should_{результат}_when_{условие} (на английском)
+- ✅ Верните ТОЛЬКО Java код, начиная с package declaration
+- ✅ Включите ВСЕ необходимые импорты
+- ❌ НЕ включайте JSON, markdown, или текстовые описания
+- ❌ НЕ включайте объяснений или комментариев
 
-ВАЖНО про импорты:
-- ВСЕГДА добавляйте import org.junit.jupiter.api.Test;
-- ВСЕГДА добавляйте import org.junit.jupiter.api.DisplayName;
-- ВСЕГДА добавляйте import static org.assertj.core.api.Assertions.*;
-- Если используете моки: import org.mockito.*; и import org.junit.jupiter.api.extension.ExtendWith;
-- Если используете @ParameterizedTest: import org.junit.jupiter.params.ParameterizedTest;
-- Добавьте импорты для ВСЕХ классов используемых в методе (User, Order, Service и т.д.)
+Обязательные импорты:
+- import org.junit.jupiter.api.Test;
+- import org.junit.jupiter.api.DisplayName;
+- import static org.assertj.core.api.Assertions.*;
+- import org.mockito.*; (если нужны моки)
+- import org.junit.jupiter.api.extension.ExtendWith; (если нужны моки)
+- Импорты для всех классов из сигнатуры метода
 
-Руководство:
-- Всегда покрывайте основной сценарий (happy path), граничные случаи, обработку ошибок и краевые условия
-- Используйте описательные имена тестовых методов по соглашению: should_{ожидание}_when_{условие}
-- ОБЯЗАТЕЛЬНО добавляйте @DisplayName("описание на русском") к КАЖДОМУ тесту
-- @DisplayName должен описывать ЧТО проверяет тест понятным языком
-- Пишите изолированные, повторяемые тесты с правильной подготовкой и очисткой
-- Включайте осмысленные тестовые данные, отражающие реальные сценарии
-- Используйте соответствующие стратегии мокирования без избыточного мокирования
-- Следуйте стилю и соглашениям существующих тестов проекта
+Руководство по тестам:
+- Покрыть: happy path, граничные случаи, обработку ошибок, краевые условия
+- @DisplayName("описание на русском") к КАЖДОМУ тесту - обязательно!
+- Изолированные, повторяемые тесты с правильной подготовкой и очисткой
+- Осмысленные тестовые данные, отражающие реальные сценарии
+- Соответствующие стратегии мокирования без избыточного мокирования
+- Следовать стилю и соглашениям существующих тестов проекта
 
 Пример правильного формата:
 ```java
@@ -92,19 +91,22 @@ class MyServiceTest {
 
 ## Сигнатура метода
 Класс: DataStorageController
-Метод: getById
+Метод: getByGroupAndName
 Возвращаемый тип: ResponseEntity<DataStorageResponse>
-Параметры: id: UUID
+Параметры: group: String, name: String
 Аннотации: org.springframework.web.bind.annotation.GetMapping
 
 ## Исходный код метода
 ```java
 /**
-     * Получение записи по идентификатору.
+     * Получение записи по группе и названию.
+     * Комбинация (group, name) предполагается уникальной.
      */
-    @GetMapping("/{id}")
-    public ResponseEntity<DataStorageResponse> getById(@PathVariable UUID id) {
-        DataStorageResponse resp = storageService.getById(id);
+    @GetMapping("/by-group-and-name/{group}/{name}")
+    public ResponseEntity<DataStorageResponse> getByGroupAndName(
+            @PathVariable String group,
+            @PathVariable String name) {
+        DataStorageResponse resp = storageService.getByGroupAndName(group, name);
         if (Objects.isNull(resp)) {
             return ResponseEntity.notFound().build();
         }
@@ -113,9 +115,9 @@ class MyServiceTest {
 ```
 
 ## Граф потока управления (CFG)
-return at line 1719
-if (Objects.isNull(resp)) at line 1679 [then: 1705]
-return at line 1779
+return at line 2269
+if (Objects.isNull(resp)) at line 2229 [then: 2255]
+return at line 2329
 
 
 ## ⚠️ ТРЕБОВАНИЕ: Покрытие всех веток
@@ -136,7 +138,8 @@ return at line 1779
 
 
 ## Зависимости
-id: UUID [external]
+group: String
+name: String
 storageService: DataStorageService
 
 ## Детали зависимостей
@@ -151,7 +154,7 @@ storageService: DataStorageService
 - void deleteById(UUID id)
 - void retainOldest()
 
-### id (UUID)
+### group (String)
 
 ## Документация и контракт
 
@@ -164,18 +167,22 @@ storageService: DataStorageService
 ## Вызываемые методы
 Методы которые вызываются в теле анализируемого метода:
 
-### ru.progredis.dataserver.services.DataStorageService.getById
+### ru.progredis.dataserver.services.DataStorageService.getByGroupAndName
 - Возвращаемый тип: ru.progredis.dataserver.model.DataStorageResponse
-- Параметры: UUID id
+- Параметры: String group, String name
 - Статический: нет
 - Есть исходный код: да
 - Фрагмент кода:
 ```java
-public DataStorageResponse getById(UUID id) {
-        return DataStorageMapper.mapResponse(dataManagementService.getById(TABLE, id));
+public DataStorageResponse getByGroupAndName(String group, String name) {
+        return dataManagementService.queryByExpression(TABLE, Expression.builder()
+                .left(Expression.builder().left(FieldValue.of("group")).op(PredicateOp.EQ).right(StringValue.of(group)).build())
+                .op(PredicateOp.AND)
+                .right(Expression.builder().left(FieldValue.of("name")).op(PredicateOp.EQ).right(StringValue.of(name)).build())
+                .build()).findFirst().map(DataStorageMapper::mapResponse).orElse(null);
     }
 ```
-- Вызывает: getById, mapResponse
+- Вызывает: of, of, queryByExpression
 
 ### org.springframework.http.ResponseEntity.notFound
 - Возвращаемый тип: org.springframework.http.ResponseEntity.HeadersBuilder<?>
@@ -291,12 +298,10 @@ void shouldSaveUserViaRepository() {
 
 ---
 
-Step 1: Intent
-
 ## 🎯 Intent Analysis Results
 
 ### Goal
-Test getById method
+Test getByGroupAndName method
 
 ### Preconditions
 
@@ -312,7 +317,6 @@ None
 ### Exceptions
 None
 
-
 ---
 
 Step 2: Scenarios
@@ -320,7 +324,7 @@ Step 2: Scenarios
 🌳 Scenario Tree
 ===============
 
-Root: DataStorageController.getById
+Root: DataStorageController.getByGroupAndName
 ├── ✅ S1: Happy path - normal execution
 │   Type: HAPPY
 │   Conditions: Valid parameters
@@ -372,12 +376,13 @@ Step 4: Code
 package com.example.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
-import com.example.model.DataStorageResponse;
 import com.example.service.DataStorageService;
-import java.util.UUID;
+import com.example.response.DataStorageResponse;
+import java.util.Optional;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -388,39 +393,55 @@ import org.springframework.http.ResponseEntity;
 @ExtendWith(MockitoExtension.class)
 class DataStorageControllerTest {
 
-    @Mock
-    private DataStorageService storageService;
+  @Mock private DataStorageService storageService;
 
-    @InjectMocks
-    private DataStorageController dataStorageController;
+  @InjectMocks private DataStorageController dataStorageController;
 
-    @Test
-    void should_return_correct_response_when_id_exists() {
-        // Arrange
-        UUID id = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
-        DataStorageResponse expectedResponse = new DataStorageResponse();
-        expectedResponse.setId(id);
-        expectedResponse.setName("Test Resource");
+  @DisplayName("should return correct response when group and name exist")
+  @Test
+  void should_return_correct_response_when_group_and_name_exist() {
+    // Arrange
+    String groupName = "testGroup";
+    String itemName = "testItem";
+    String expectedContent = "Mocked content for test";
+    
+    DataStorageResponse expectedResponse = new DataStorageResponse();
+    expectedResponse.setContent(expectedContent);
 
-        when(storageService.findById(id)).thenReturn(expectedResponse);
+    when(storageService.findByGroupAndName(groupName, itemName))
+        .thenReturn(Optional.of(expectedResponse));
 
-        // Act
-        ResponseEntity<DataStorageResponse> result = dataStorageController.getById(id);
+    // Act
+    ResponseEntity<DataStorageResponse> result =
+        dataStorageController.getByGroupAndName(groupName, itemName);
 
-        // Assert
-        assertThat(result).isNotNull();
-        assertThat(result.getBody()).isEqualTo(expectedResponse);
-    }
+    // Assert
+    assertThat(result).isNotNull();
+    assertThat(result.getStatusCodeValue()).isEqualTo(200);
+    assertThat(result.getBody()).isNotNull();
+    assertThat(result.getBody().getContent()).isEqualTo(expectedContent);
+  }
 }
 
 --- 
 
 Step 5: Validation
 
-## ❌ Pipeline Error
+## ✅ Compiler Loop Validation Results
 
-**Error:** IllegalFormatConversionException
+### Status: ⚠️ PARTIAL SUCCESS
 
-**Message:** d != java.lang.String
+Still has **1** compilation error(s) after 1 attempt(s)
 
-**Check logs for details.**
+### Attempt History
+
+#### Attempt #1
+- Errors found: 1
+- Fix applied: No
+- Description: Exception: d != java.lang.String
+
+### Remaining Errors
+
+- Line ?: Compilation - Validation failed: Access is allowed from Event Dispatch Thread (EDT) only; see https://jb.gg/ij-platform-threading for details
+Current thread: Thread[ApplicationImpl pooled thread 34,4,main] 582983429 (EventQueue.isDispatchThread()=false)
+SystemEventQueueThread: Thread[AWT-EventQueue-0,6,main] 1909499659
