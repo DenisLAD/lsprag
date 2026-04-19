@@ -4,18 +4,11 @@
 
 ---
 
-## 📖 Документы
-
-### Основная документация проекта
+## 📖 Новая документация (CFG Extraction)
 
 | Файл | Описание |
 |------|----------|
 | [PROJECT_COMPLETION.md](PROJECT_COMPLETION.md) | 📋 Итоговая документация проекта. Все завершенные задачи, метрики, руководство по использованию |
-
-### CFG Extraction и Branch Coverage
-
-| Файл | Описание |
-|------|----------|
 | [BRANCH_COVERAGE_AUDIT.md](BRANCH_COVERAGE_AUDIT.md) | 🔍 Полный аудит поддержки ветвлений. 15 упущенных конструкций, приоритеты реализации, план из 3 этапов |
 | [ENHANCED_BRANCH_SUPPORT.md](ENHANCED_BRANCH_SUPPORT.md) | ✅ Этап 1: Pattern matching, lambda с рекурсией, assertions, yield. +30% к покрытию |
 | [EDGE_CASES_IMPLEMENTATION.md](EDGE_CASES_IMPLEMENTATION.md) | ✅ Этапы 2-3: Try-with-resources, multi-catch, method references, synchronized, record patterns, guarded patterns, reactive streams. Финальное покрытие 98% |
@@ -23,7 +16,26 @@
 
 ---
 
-## 🎯 Краткое содержание
+## 📚 Старая документация
+
+Историческая документация проекта перемещена в папку [old/](old/):
+
+| Категория | Файлы |
+|-----------|-------|
+| **Основная** | [ANALYTICS.md](old/ANALYTICS.md), [README.md](../README.md), [DEVELOPER_GUIDE.md](old/DEVELOPER_GUIDE.md) |
+| **Требования** | [FINAL_REQ.md](old/FINAL_REQ.md), [REQUIREMENTS_STATUS.md](old/REQUIREMENTS_STATUS.md) |
+| **Реализация** | [IMPLEMENTATION_SUMMARY.md](old/IMPLEMENTATION_SUMMARY.md), [FINAL_VERSION.md](old/FINAL_VERSION.md) |
+| **Улучшения** | [ALL_IMPROVEMENTS.md](old/ALL_IMPROVEMENTS.md), [IMPROVEMENTS.md](old/IMPROVEMENTS.md), [CHANGES.md](old/CHANGES.md) |
+| **Тестирование** | [TESTING.md](old/TESTING.md), [TEST_RESULTS.md](old/TEST_RESULTS.md), [TEST_VERIFICATION.md](old/TEST_VERIFICATION.md) |
+| **Отладка** | [DEBUGGING_GUIDE.md](old/DEBUGGING_GUIDE.md), [FIX_ERRORS_FLOW.md](old/FIX_ERRORS_FLOW.md), [RUNIDE_FIX.md](old/RUNIDE_FIX.md) |
+| **Фичи** | [BRANCHING_COVERAGE.md](old/BRANCHING_COVERAGE.md), [LOOP_COVERAGE.md](old/LOOP_COVERAGE.md), [SELF_CORRECTION.md](old/SELF_CORRECTION.md) |
+| **Release Notes** | [V2_RELEASE_NOTES.md](old/V2_RELEASE_NOTES.md), [V2.1_BUG_FIXES.md](old/V2.1_BUG_FIXES.md) |
+
+**Всего в old/:** 31 файл документации
+
+---
+
+## 🎯 Краткое содержание новых документов
 
 ### Достижения
 
@@ -35,38 +47,12 @@
 
 ### Поддерживаемые конструкции (30 типов)
 
-**Базовые (8):**
-- if/else if/else
-- ternary (?:)
-- switch (classic + arrow)
-- while, for, for-each
-- try-catch-finally
-- return, throw
-
-**Java 16+ (3):**
-- pattern matching instanceof
-- lambda (с рекурсией)
-- assertions
-- yield (switch expressions)
-
-**Functional (5):**
-- stream.filter/map/forEach
-- optional.ifPresent/OrElse
-- method references
-- anonymous classes
-
-**Java 21+ (4):**
-- record patterns
-- guarded patterns
-- sealed classes
-
-**Resources & Error Handling (3):**
-- try-with-resources
-- multi-catch
-- reactive streams (Mono/Flux)
-
-**Concurrency (1):**
-- synchronized blocks
+**Базовые (8):** if/else, ternary, switch, loops, try-catch, return, throw  
+**Java 16+ (3):** pattern matching, lambda, assertions, yield  
+**Functional (5):** stream API, optional, method references, anonymous classes  
+**Java 21+ (4):** record patterns, guarded patterns, sealed classes  
+**Resources (3):** try-with-resources, multi-catch, reactive streams  
+**Concurrency (1):** synchronized blocks
 
 ---
 
@@ -83,18 +69,19 @@
 
 ## 🔗 Ссылки
 
-- [README.md](../README.md) - Основная документация проекта
-- [ANALYTICS.md](../ANALYTICS.md) - Техническое задание
-- [DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) - Руководство разработчика
+- [README.md](../README.md) - Основная документация проекта (обновленная)
+- [ANALYTICS.md](old/ANALYTICS.md) - Техническое задание
+- [DEVELOPER_GUIDE.md](old/DEVELOPER_GUIDE.md) - Руководство разработчика
 
 ---
 
 ## 📝 История изменений
 
 - **Апрель 2026:** Добавлена полная поддержка edge cases (98% покрытие)
-- **Этап 1:** Pattern matching, lambda, assertions, yield
-- **Этап 2:** Try-with-resources, multi-catch, method references, synchronized
-- **Этап 3:** Record patterns, guarded patterns, reactive streams
+  - Этап 1: Pattern matching, lambda, assertions, yield
+  - Этап 2: Try-with-resources, multi-catch, method references, synchronized
+  - Этап 3: Record patterns, guarded patterns, reactive streams
+- **Документация:** Организована в папках `documentation/` и `documentation/old/`
 
 ---
 
