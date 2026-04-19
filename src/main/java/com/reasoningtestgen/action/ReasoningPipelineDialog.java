@@ -101,8 +101,11 @@ public class ReasoningPipelineDialog extends DialogWrapper {
         JPanel mainPanel = new JPanel(new BorderLayout());
         mainPanel.setPreferredSize(new Dimension(1400, 900));
 
-        // Create tabbed pane with 5 tabs for each reasoning step
+        // Create tabbed pane with 6 tabs for prompt + 5 reasoning steps
         pipelineTabs = new JTabbedPane();
+
+        // Tab 0: Original Prompt (NEW - for context)
+        pipelineTabs.addTab("📝 Prompt", createScrollPane(createPromptPanel()));
 
         // Tab 1: Intent Analysis
         intentPanel = createIntentPanel();
@@ -151,6 +154,24 @@ public class ReasoningPipelineDialog extends DialogWrapper {
 
         intentEditor = createEditor("");
         panel.add(intentEditor.getComponent(), BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    /**
+     * Tab 0: Original Prompt (added for context)
+     */
+    @NotNull
+    private JPanel createPromptPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(JBUI.Borders.empty(10));
+
+        JLabel header = new JLabel("<html><b>📝 Original Prompt</b><br/>" +
+            "Full prompt sent to LLM including system and user sections</html>");
+        panel.add(header, BorderLayout.NORTH);
+
+        Editor promptEditor = createEditor(initialPrompt);
+        panel.add(promptEditor.getComponent(), BorderLayout.CENTER);
 
         return panel;
     }
@@ -565,6 +586,9 @@ public class ReasoningPipelineDialog extends DialogWrapper {
                     )
                 );
             }
+            
+            // Enable save button when code is generated
+            saveButton.setEnabled(true);
         });
     }
 
