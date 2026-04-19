@@ -101,6 +101,10 @@ public class ReasoningPipelineDialog extends DialogWrapper {
         JPanel mainPanel = new JPanel(new BorderLayout());
         mainPanel.setPreferredSize(new Dimension(1400, 900));
 
+        // Progress bar at the top of the dialog
+        JPanel progressPanel = createProgressPanel();
+        mainPanel.add(progressPanel, BorderLayout.NORTH);
+
         // Create tabbed pane with 6 tabs for prompt + 5 reasoning steps
         pipelineTabs = new JTabbedPane();
 
@@ -131,6 +135,30 @@ public class ReasoningPipelineDialog extends DialogWrapper {
         mainPanel.add(createStatusBar(), BorderLayout.SOUTH);
 
         return mainPanel;
+    }
+
+    /**
+     * Create progress panel with progress bar and status label
+     */
+    @NotNull
+    private JPanel createProgressPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(JBUI.Borders.empty(5));
+        panel.setPreferredSize(new Dimension(1400, 50));
+
+        // Status label
+        JLabel progressLabel = new JLabel("  Ready");
+        progressLabel.setBorder(JBUI.Borders.emptyLeft(5));
+        panel.add(progressLabel, BorderLayout.WEST);
+
+        // Progress bar
+        progressBar = new JProgressBar();
+        progressBar.setVisible(false);
+        progressBar.setStringPainted(true);
+        progressBar.setPreferredSize(new Dimension(300, 20));
+        panel.add(progressBar, BorderLayout.CENTER);
+
+        return panel;
     }
 
     @NotNull
@@ -286,15 +314,12 @@ public class ReasoningPipelineDialog extends DialogWrapper {
         statusBar.setBorder(BorderFactory.createEtchedBorder());
         statusBar.setPreferredSize(new Dimension(1200, 35));
 
+        // Status label (progress bar is at the top)
         statusLabel = new JLabel("  📋 Ready to run reasoning pipeline");
         statusLabel.setBorder(JBUI.Borders.emptyLeft(5));
         statusBar.add(statusLabel, BorderLayout.CENTER);
 
-        progressBar = new JProgressBar();
-        progressBar.setVisible(false);
-        progressBar.setStringPainted(true);
-        statusBar.add(progressBar, BorderLayout.EAST);
-
+        // Buttons only (no progress bar here - it's at the top)
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
 
         runPipelineButton = new JButton("🚀 Run Pipeline");
@@ -589,20 +614,22 @@ public class ReasoningPipelineDialog extends DialogWrapper {
         if (generatedCode == null) return;
 
         ApplicationManager.getApplication().invokeLater(() -> {
-            codeEditor.getDocument().setText(generatedCode.javaCode());
+            WriteCommandAction.runWriteCommandAction(project, () -> {
+                codeEditor.getDocument().setText(generatedCode.javaCode());
 
-            // Update syntax highlighter
-            if (codeEditor instanceof EditorEx) {
-                ((EditorEx) codeEditor).setHighlighter(
-                    EditorHighlighterFactory.getInstance().createEditorHighlighter(
-                        project,
-                        new LightVirtualFile(className + "Test.java", StdFileTypes.JAVA, generatedCode.javaCode())
-                    )
-                );
-            }
+                // Update syntax highlighter
+                if (codeEditor instanceof EditorEx) {
+                    ((EditorEx) codeEditor).setHighlighter(
+                        EditorHighlighterFactory.getInstance().createEditorHighlighter(
+                            project,
+                            new LightVirtualFile(className + "Test.java", StdFileTypes.JAVA, generatedCode.javaCode())
+                        )
+                    );
+                }
 
-            // Enable save button when code is generated
-            saveButton.setEnabled(true);
+                // Enable save button when code is generated
+                saveButton.setEnabled(true);
+            });
         });
     }
 
