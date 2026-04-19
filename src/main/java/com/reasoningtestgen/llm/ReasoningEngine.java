@@ -102,85 +102,85 @@ public class ReasoningEngine {
     @NotNull
     public IntentOutput analyzeIntent(@NotNull MethodContext context) throws LLMProvider.LLMException {
         String systemPrompt = """
-            You are a Senior Software Architect analyzing a Java method to extract its complete intent and contract.
+            Вы — Senior Software Architect, анализирующий Java метод для извлечения его полного назначения и контракта.
 
-            CRITICAL REQUIREMENTS:
-            - Be SPECIFIC and DETAILED - avoid generic statements
-            - Analyze ACTUAL business logic, not just "method processes data"
-            - Identify ALL preconditions from parameters and state
-            - List ALL postconditions including return value semantics
-            - Document ALL side effects (DB, I/O, state changes, network calls)
-            - Specify ALL exceptions with their triggers
+            КРИТИЧЕСКИ ВАЖНО:
+            - Будьте КОНКРЕТНЫ и ДЕТАЛЬНЫ — избегайте общих фраз
+            - Анализируйте РЕАЛЬНУЮ бизнес-логику, а не просто "метод обрабатывает данные"
+            - Определите ВСЕ предусловия из параметров и состояния
+            - Перечислите ВСЕ постусловия включая семантику возвращаемого значения
+            - Документируйте ВСЕ побочные эффекты (БД, I/O, изменения состояния, сетевые вызовы)
+            - Укажите ВСЕ исключения с их триггерами
 
-            OUTPUT FORMAT:
-            Respond with JSON containing:
-            - goal: Specific business purpose (2-3 sentences, not generic)
-            - preconditions: List ALL conditions that must be true (at least 2-3)
-            - postconditions: List ALL guarantees after execution (at least 2-3)
-            - sideEffects: ALL side effects (state changes, I/O, DB, network, etc.)
-            - exceptions: ALL exception types with specific trigger conditions
+            ФОРМАТ ОТВЕТА:
+            Ответьте JSON содержащим:
+            - goal: Конкретная бизнес-цель (2-3 предложения, не общие фразы)
+            - preconditions: Перечислите ВСЕ условия которые должны быть истинны (минимум 2-3)
+            - postconditions: Перечислите ВСЕ гарантии после выполнения (минимум 2-3)
+            - sideEffects: ВСЕ побочные эффекты (БД, I/O, изменения состояния, сеть, и т.д.)
+            - exceptions: ВСЕ типы исключений с конкретными условиями возникновения
 
-            EXAMPLE (for UserService.createUser):
+            ПРИМЕР (для UserService.createUser):
             {
-              "goal": "Creates a new user account with validation: checks username uniqueness, validates email format, encrypts password, and persists to database. Returns user DTO with generated ID.",
+              "goal": "Создает новую учетную запись пользователя с валидацией: проверяет уникальность username, валидирует формат email, шифрует пароль, сохраняет в БД. Возвращает user DTO с сгенерированным ID.",
               "preconditions": [
-                "Database connection is available",
-                "Username must not be null or empty",
-                "Email must be valid format",
-                "Password must meet complexity requirements"
+                "Подключение к базе данных доступно",
+                "Username не должен быть null или пустым",
+                "Email должен быть валидного формата",
+                "Пароль должен соответствовать требованиям сложности"
               ],
               "postconditions": [
-                "New user record exists in database with unique ID",
-                "Password is encrypted using BCrypt",
-                "Username is unique (no duplicates exist)",
-                "User DTO returned with all fields populated"
+                "Новая запись пользователя существует в БД с уникальным ID",
+                "Пароль зашифрован используя BCrypt",
+                "Username уникален (дубликатов не существует)",
+                "User DTO возвращен со всеми заполненными полями"
               ],
               "sideEffects": [
-                "INSERT into users table",
-                "Email notification sent to user",
-                "Audit log entry created",
-                "Cache invalidated for user list"
+                "INSERT в таблицу users",
+                "Email уведомление отправлено пользователю",
+                "Запись в audit log создана",
+                "Кэш для списка пользователей инвалидирован"
               ],
               "exceptions": [
-                "IllegalArgumentException when username is null/empty",
-                "IllegalArgumentException when email format is invalid",
-                "DuplicateKeyException when username already exists",
-                "DataAccessException when database operation fails"
+                "IllegalArgumentException когда username null/пустой",
+                "IllegalArgumentException когда формат email невалиден",
+                "DuplicateKeyException когда username уже существует",
+                "DataAccessException когда операция БД не удалась"
               ]
             }
             """;
 
         String userPrompt = String.format("""
-            Analyze the following method and extract its COMPLETE intent and contract:
+            Проанализируйте следующий метод и извлеките его ПОЛНОЕ назначение и контракт:
 
-            ## Method Signature
-            Class: %s
-            Method: %s(%s)
-            Return Type: %s
-            Annotations: %s
+            ## Сигнатура метода
+            Класс: %s
+            Метод: %s(%s)
+            Возвращаемый тип: %s
+            Аннотации: %s
 
-            ## Source Code
+            ## Исходный код
             ```java
             %s
             ```
 
-            ## Control Flow Graph
+            ## Граф потока управления (CFG)
             %s
 
-            ## Documentation Contract
-            - Parameters: %s
-            - Returns: %s
-            - Throws: %s
-            - Business Rules: %s
+            ## Документация и контракт
+            - Параметры: %s
+            - Возвращает: %s
+            - Бросает: %s
+            - Бизнес правила: %s
 
-            IMPORTANT:
-            - Analyze the ACTUAL code implementation, not just the signature
-            - Look at IF conditions, loops, exceptions to understand behavior
-            - Identify business rules from variable names and logic
-            - Consider Spring annotations (@Transactional, @Cacheable, etc.)
-            - Check for validation, null checks, error handling
+            ВАЖНО:
+            - Анализируйте РЕАЛЬНУЮ реализацию кода, а не только сигнатуру
+            - Смотрите на IF условия, циклы, исключения для понимания поведения
+            - Определите бизнес правила из имен переменных и логики
+            - Учтите Spring аннотации (@Transactional, @Cacheable, и т.д.)
+            - Проверьте валидацию, null проверки, обработку ошибок
 
-            Respond with COMPLETE JSON (use the example format from system prompt):
+            Ответьте ПОЛНЫМ JSON (используйте формат примера из system prompt):
             {
               "goal": "...",
               "preconditions": [...],
@@ -194,10 +194,10 @@ public class ReasoningEngine {
             formatParams(context.parameters()),
             context.returnType(),
             String.join(", ", context.annotations()),
-            context.sourceCode() != null ? context.sourceCode() : "Not available",
+            context.sourceCode() != null ? context.sourceCode() : "Не доступен",
             formatCFG(context.controlFlow().nodes()),
             context.docContract() != null ? context.docContract().params() : "{}",
-            context.docContract() != null ? context.docContract().returns() : "not specified",
+            context.docContract() != null ? context.docContract().returns() : "не указано",
             context.docContract() != null ? context.docContract().throwsList() : "[]",
             context.docContract() != null ? context.docContract().businessRules() : "[]"
         );

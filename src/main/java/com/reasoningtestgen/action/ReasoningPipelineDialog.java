@@ -644,7 +644,7 @@ public class ReasoningPipelineDialog extends DialogWrapper {
 
         if (correctionResult.success()) {
             sb.append("### Status: ✅ SUCCESS\n\n");
-            sb.append(String.format("Fixed in **%d** compilation loop iteration(s)\n\n", 
+            sb.append(String.format("Fixed in **%d** compilation loop iteration(s)\n\n",
                 correctionResult.attemptsCount()));
         } else {
             sb.append("### Status: ⚠️ PARTIAL SUCCESS\n\n");
@@ -677,7 +677,10 @@ public class ReasoningPipelineDialog extends DialogWrapper {
             sb.append("✅ No remaining errors - code compiles successfully!\n");
         }
 
-        validationArea.setText(sb.toString());
+        // Update UI on EDT
+        ApplicationManager.getApplication().invokeLater(() -> {
+            validationArea.setText(sb.toString());
+        });
     }
 
     /**
