@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.intellij.openapi.project.Project;
 import com.reasoningtestgen.builder.ContextBuilder;
+import com.reasoningtestgen.generator.TestCaseCodeGenerator;
 import com.reasoningtestgen.model.*;
 import com.reasoningtestgen.model.PromptEntry.ReasoningStep;
 import com.reasoningtestgen.refiner.SelfCorrectionEngine;
@@ -96,9 +97,10 @@ public class ReasoningEngine {
 
     /**
      * Step 1: Intent & Contract Analysis
+     * Public method for use in UI dialog
      */
     @NotNull
-    private IntentOutput analyzeIntent(@NotNull MethodContext context) throws LLMProvider.LLMException {
+    public IntentOutput analyzeIntent(@NotNull MethodContext context) throws LLMProvider.LLMException {
         String systemPrompt = """
             You are analyzing a Java method to understand its intent and contract.
             Respond with JSON containing:
@@ -156,68 +158,147 @@ public class ReasoningEngine {
 
     /**
      * Step 2: Scenario Mapping
+     * Generates detailed test scenarios with Given-When-Then specifications
+     * Public method for use in UI dialog
      */
     @NotNull
-    private ScenarioTree generateScenarios(@NotNull MethodContext context, 
+    public ScenarioTree generateScenarios(@NotNull MethodContext context,
                                            @NotNull IntentOutput intentOutput) throws LLMProvider.LLMException {
         String systemPrompt = """
-            You are designing test scenarios for a Java method based on its control flow and intent.
-            Create a comprehensive scenario tree covering:
-            - Happy path (normal successful execution)
-            - Error paths (exceptions, error handling)
-            - Boundary conditions (edge cases, limits)
-            - State transitions (if applicable)
+            You are designing detailed test scenarios for a Java method.
+            For EACH scenario, provide a complete TestCaseSpecification in Given-When-Then format.
             
-            Respond with JSON containing:
-            - root: Root scenario node
-            - children: List of scenario nodes
+            Each test case must include:
+            - testName: Unique test method name (snake_case or camelCase)
+            - description: Clear description of what is being tested
+            - given: Setup including fixtures, mocks, preconditions
+            - when: Action under test (method call)
+            - then: Expected results with specific assertions
+            
+            Cover all scenario types:
+            - HAPPY: Normal successful execution
+            - ERROR: Exception handling and error paths
+            - BOUNDARY: Edge cases and boundary conditions
+            - STATE: State-dependent behavior
+            - PERFORMANCE: Performance-related tests (if applicable)
+            
+            Respond with JSON containing complete scenario tree with test case specifications.
             """;
 
         String userPrompt = String.format("""
-            Generate test scenarios for method %s.%s
-            
-            Control Flow:
+            Generate detailed test scenarios with Given-When-Then specifications for method %s.%s
+
+            ## Method Information
+            Class: %s
+            Method: %s(%s)
+            Return Type: %s
+            Annotations: %s
+
+            ## Control Flow Graph
             %s
-            
-            Intent Analysis:
+
+            ## Intent Analysis
             - Goal: %s
             - Preconditions: %s
+            - Postconditions: %s
             - Exceptions: %s
-            
-            Complexity: Cyclomatic=%d, Branches=%d
-            
-            Create a scenario tree with comprehensive test cases.
-            Respond with valid JSON matching this schema:
+
+            ## Complexity Metrics
+            - Cyclomatic Complexity: %d
+            - Branch Count: %d
+            - Loop Count: %d
+
+            ## Dependencies
+            %s
+
+            ## Documentation Contract
+            - Parameters: %s
+            - Returns: %s
+            - Throws: %s
+            - Business Rules: %s
+
+            Create a scenario tree where EACH scenario has a complete testCaseSpec with:
+            - testName, description
+            - given: { fixtures, mocks, preconditions, testData }
+            - when: { action, methodCall, arguments, expectsException, expectedExceptionType }
+            - then: { assertions[], expectedReturnValue, stateChanges, sideEffects }
+
+            Respond with valid JSON matching this extended schema:
             {
-              "root": {"id": "S0", "description": "All scenarios"},
+              "root": {"id": "S0", "description": "All scenarios", "testCaseSpec": null},
               "children": [
                 {
                   "id": "S1",
-                  "type": "HAPPY|ERROR|BOUNDARY|STATE",
+                  "type": "HAPPY|ERROR|BOUNDARY|STATE|PERFORMANCE",
                   "description": "string",
                   "inputConditions": "string",
                   "expectedOutcome": "string",
                   "shouldThrow": boolean,
-                  "children": []
+                  "children": [],
+                  "testCaseSpec": {
+                    "testName": "should_expectedResult_when_condition",
+                    "description": "Detailed description",
+                    "given": {
+                      "fixtures": [{"variableName": "var", "className": "Type", "creationCode": "..."}],
+                      "mocks": [{"variableName": "mock", "className": "Type", "stubbings": [...]}],
+                      "preconditions": ["state description"],
+                      "testData": ["data description"]
+                    },
+                    "when": {
+                      "action": "Call method with params",
+                      "methodCall": "object.method(arg1, arg2)",
+                      "arguments": ["arg1", "arg2"],
+                      "expectsException": false,
+                      "expectedExceptionType": null
+                    },
+                    "then": {
+                      "assertions": [
+                        {"description": "Check result", "actualExpression": "result", "expectedValue": "expected", "type": "EQUALS"}
+                      ],
+                      "expectedReturnValue": "expected value",
+                      "stateChanges": [],
+                      "sideEffects": []
+                    },
+                    "tags": ["unit", "feature"],
+                    "priority": "P0",
+                    "requiresMocking": true,
+                    "isParameterized": false,
+                    "parameterSets": []
+                  }
                 }
               ]
             }
             """,
             context.className(),
             context.methodName(),
+            context.className(),
+            context.methodName(),
+            formatParams(context.parameters()),
+            context.returnType(),
+            String.join(", ", context.annotations()),
             formatCFG(context.controlFlow().nodes()),
             intentOutput.goal(),
-            intentOutput.preconditions(),
-            intentOutput.exceptions(),
+            String.join(", ", intentOutput.preconditions()),
+            String.join(", ", intentOutput.postconditions()),
+            String.join(", ", intentOutput.exceptions()),
             context.complexity().cyclomatic(),
-            context.complexity().branchCount()
+            context.complexity().branchCount(),
+            context.complexity().loopCount(),
+            formatDependencies(context.dependencies()),
+            context.docContract() != null ? context.docContract().params() : "{}",
+            context.docContract() != null ? context.docContract().returns() : "not specified",
+            context.docContract() != null ? context.docContract().throwsList() : "[]",
+            context.docContract() != null ? context.docContract().businessRules() : "[]"
         );
 
         String response = llmProvider.chat(userPrompt, systemPrompt);
         LOG.debug("Scenario mapping response received");
 
         try {
-            return objectMapper.readValue(response, ScenarioTree.class);
+            ScenarioTree tree = objectMapper.readValue(response, ScenarioTree.class);
+            LOG.info("Generated scenario tree with {} scenarios", 
+                tree.children() != null ? tree.children().size() : 0);
+            return tree;
         } catch (JsonProcessingException e) {
             LOG.warn("Failed to parse scenario tree, using fallback", e);
             return createFallbackScenarios(context, intentOutput);
@@ -226,9 +307,10 @@ public class ReasoningEngine {
 
     /**
      * Step 3: Test Design
+     * Public method for use in UI dialog
      */
     @NotNull
-    private TestDesign designTests(@NotNull MethodContext context, 
+    public TestDesign designTests(@NotNull MethodContext context,
                                    @NotNull ScenarioTree scenarioTree) throws LLMProvider.LLMException {
         String systemPrompt = """
             You are designing the test implementation strategy for a Java method.
@@ -287,15 +369,75 @@ public class ReasoningEngine {
 
     /**
      * Step 4: Code Generation
+     * Generates test code using TestCaseCodeGenerator from specifications
+     * Public method for use in UI dialog
      */
     @NotNull
-    private GeneratedCode generateCode(@NotNull TestDesign design, 
+    public GeneratedCode generateCode(@NotNull TestDesign design,
                                        @NotNull ScenarioTree scenarioTree,
                                        @NotNull MethodContext context) throws LLMProvider.LLMException {
+        LOG.info("Generating test code from {} scenarios", 
+            scenarioTree.children() != null ? scenarioTree.children().size() : 0);
+
+        // Use TestCaseCodeGenerator for scenarios with specifications
+        TestCaseCodeGenerator codeGenerator = new TestCaseCodeGenerator(
+            design, context.className(), context.methodName());
+
+        StringBuilder testClassCode = new StringBuilder();
+        List<String> testCaseSpecs = new ArrayList<>();
+
+        // Generate test methods from specifications
+        if (scenarioTree.children() != null) {
+            for (ScenarioTree.ScenarioNode scenario : scenarioTree.children()) {
+                if (scenario.testCaseSpec() != null) {
+                    LOG.debug("Generating test method: {}", scenario.testCaseSpec().testName());
+                    
+                    String testMethodCode;
+                    if (scenario.testCaseSpec().isParameterized()) {
+                        testMethodCode = codeGenerator.generateParameterizedTest(scenario.testCaseSpec());
+                    } else {
+                        testMethodCode = codeGenerator.generateTestMethod(scenario.testCaseSpec());
+                    }
+                    
+                    testClassCode.append(testMethodCode).append("\n");
+                    testCaseSpecs.add(scenario.testCaseSpec().description());
+                }
+            }
+        }
+
+        // If no specifications were generated, fall back to LLM generation
+        if (testClassCode.length() == 0) {
+            LOG.info("No test case specifications found, using LLM generation");
+            return generateCodeViaLLM(design, scenarioTree, context);
+        }
+
+        // Generate imports
+        List<String> imports = generateTestClassImports(context, design, scenarioTree);
+
+        // Build complete test class
+        String fullTestClass = buildTestClass(
+            context, design, imports, testClassCode.toString());
+
+        LOG.info("Generated test class with {} test methods", testCaseSpecs.size());
+
+        return new GeneratedCode(
+            fullTestClass,
+            imports,
+            Map.of()
+        );
+    }
+
+    /**
+     * Fallback: Generate code via LLM (original behavior)
+     */
+    @NotNull
+    private GeneratedCode generateCodeViaLLM(@NotNull TestDesign design,
+                                              @NotNull ScenarioTree scenarioTree,
+                                              @NotNull MethodContext context) throws LLMProvider.LLMException {
         String systemPrompt = """
             You are a Senior Java Developer writing high-quality unit tests.
             Generate complete test class code following the design specifications.
-            
+
             Guidelines:
             - Use proper imports
             - Follow naming conventions
@@ -304,28 +446,28 @@ public class ReasoningEngine {
             - Write clear, descriptive test methods
             - Each test should be isolated and repeatable
             - Use realistic test data
-            
+
             The code must be valid Java that compiles without errors.
             """;
 
         String userPrompt = String.format("""
             Generate unit tests for %s.%s
-            
+
             Test Design:
             - Framework: %s
             - Naming Convention: %s
             - Mocking Strategy: %s
             - Use Parameterized: %s
             - Assertion Library: %s
-            
+
             Scenarios to cover:
             %s
-            
+
             Method Context:
             - Return Type: %s
             - Parameters: %s
             - Dependencies: %s
-            
+
             Generate the complete test class code as a single Java file.
             Include all necessary imports, annotations, and helper methods.
             """,
@@ -350,6 +492,141 @@ public class ReasoningEngine {
             extractImports(response),
             Map.of()
         );
+    }
+
+    /**
+     * Generate test class imports
+     */
+    @NotNull
+    private List<String> generateTestClassImports(@NotNull MethodContext context,
+                                                   @NotNull TestDesign design,
+                                                   @NotNull ScenarioTree scenarioTree) {
+        List<String> imports = new ArrayList<>();
+
+        // Test framework imports
+        if (design.framework() == TestDesign.TestFramework.JUNIT5) {
+            imports.add("import org.junit.jupiter.api.Test;");
+            imports.add("import org.junit.jupiter.api.BeforeEach;");
+            imports.add("import org.junit.jupiter.api.AfterEach;");
+            imports.add("import org.junit.jupiter.api.DisplayName;");
+            imports.add("import org.junit.jupiter.api.Tag;");
+
+            // Check for parameterized tests
+            boolean hasParameterized = scenarioTree.children() != null && 
+                scenarioTree.children().stream()
+                    .map(ScenarioTree.ScenarioNode::testCaseSpec)
+                    .anyMatch(spec -> spec != null && spec.isParameterized());
+
+            if (hasParameterized) {
+                imports.add("import org.junit.jupiter.params.ParameterizedTest;");
+                imports.add("import org.junit.jupiter.params.provider.MethodSource;");
+                imports.add("import org.junit.jupiter.params.provider.Arguments;");
+                imports.add("import java.util.stream.Stream;");
+            }
+        }
+
+        // Mockito imports
+        if (design.mockingStrategy() != TestDesign.MockingStrategy.NONE) {
+            imports.add("import org.mockito.Mock;");
+            imports.add("import org.mockito.MockitoAnnotations;");
+            imports.add("import static org.mockito.Mockito.*;");
+            imports.add("import org.mockito.junit.jupiter.MockitoExtension;");
+            imports.add("import org.junit.jupiter.api.extension.ExtendWith;");
+        }
+
+        // AssertJ imports
+        if (design.assertionLibrary() == TestDesign.AssertionLibrary.ASSERTJ) {
+            imports.add("import static org.assertj.core.api.Assertions.*;");
+            imports.add("import org.assertj.core.api.Assertions;");
+        }
+
+        // Add imports for dependencies
+        for (Dependency dep : context.dependencies()) {
+            if (dep.type() != null && !dep.type().startsWith("java.")) {
+                imports.add("import " + dep.type() + ";");
+            }
+        }
+
+        // Import the class under test
+        imports.add("import " + context.className() + ";");
+
+        return imports;
+    }
+
+    /**
+     * Build complete test class structure
+     */
+    @NotNull
+    private String buildTestClass(@NotNull MethodContext context,
+                                   @NotNull TestDesign design,
+                                   @NotNull List<String> imports,
+                                   @NotNull String testMethods) {
+        String packageName = "tests"; // Default package for tests
+        String testClassName = context.className() + "Test";
+
+        StringBuilder classCode = new StringBuilder();
+
+        // Package declaration
+        classCode.append("package ").append(packageName).append(";\n\n");
+
+        // Imports
+        for (String imp : imports) {
+            classCode.append(imp).append("\n");
+        }
+        classCode.append("\n");
+
+        // Class declaration
+        classCode.append("/**\n");
+        classCode.append(" * Unit tests for ").append(context.className()).append("\n");
+        classCode.append(" * Generated by Reasoning Test Generator\n");
+        classCode.append(" */\n");
+
+        if (design.mockingStrategy() == TestDesign.MockingStrategy.MOCKITO_EXTEND_WITH) {
+            classCode.append("@ExtendWith(MockitoExtension.class)\n");
+        }
+
+        classCode.append("class ").append(testClassName).append(" {\n\n");
+
+        // Mock fields
+        if (context.dependencies() != null && !context.dependencies().isEmpty()) {
+            classCode.append("    // ===== Mocks =====\n");
+            for (Dependency dep : context.dependencies()) {
+                if (!dep.isExternal()) {
+                    classCode.append("    @Mock\n");
+                    classCode.append("    private ")
+                        .append(dep.type())
+                        .append(" ")
+                        .append(dep.name())
+                        .append(";\n\n");
+                }
+            }
+        }
+
+        // Class under test
+        classCode.append("    // ===== Class under test =====\n");
+        classCode.append("    private ").append(context.className()).append(" classUnderTest;\n\n");
+
+        // Setup method
+        classCode.append("    @BeforeEach\n");
+        classCode.append("    void setUp() {\n");
+        classCode.append("        MockitoAnnotations.openMocks(this);\n");
+        classCode.append("        classUnderTest = new ").append(context.className()).append("();\n");
+        classCode.append("    }\n\n");
+
+        // Test methods
+        classCode.append("    // ===== Test Methods =====\n");
+        classCode.append(testMethods);
+
+        // Teardown method
+        classCode.append("\n    @AfterEach\n");
+        classCode.append("    void tearDown() {\n");
+        classCode.append("        // Clean up if needed\n");
+        classCode.append("    }\n");
+
+        // Close class
+        classCode.append("}\n");
+
+        return classCode.toString();
     }
 
     /**

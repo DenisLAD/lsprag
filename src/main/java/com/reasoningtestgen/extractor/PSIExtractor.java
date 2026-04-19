@@ -13,6 +13,8 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.reasoningtestgen.model.*;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -23,6 +25,8 @@ import java.util.Arrays;
  * According to ANALYTICS.md Section 5.1
  */
 public class PSIExtractor {
+
+    private static final Logger LOG = LoggerFactory.getLogger(PSIExtractor.class);
 
     /**
      * Extract complete method context from a PsiMethod
@@ -568,20 +572,116 @@ public class PSIExtractor {
                 super.visitTryStatement(statement);
                 int line = getLineNumber(statement);
 
+                // Try-with-resources detection (Java 7+)
+                // Check if try statement text contains "try (" which indicates resources
+                String tryText = statement.getText();
+                if (tryText.startsWith("try (")) {
+                    cfgNodes.add(new CFGNode(
+                        CFGNode.NodeType.TRY_WITH_RESOURCES,
+                        "try-with-resources detected",
+                        line,
+                        null,
+                        null,
+                        null
+                    ));
+                    LOG.debug("Found try-with-resources at line {}", line);
+                }
+
+                // Multi-catch handling (Java 7+)
                 for (PsiCatchSection catchSection : statement.getCatchSections()) {
                     PsiParameter param = catchSection.getParameter();
                     String exceptionType = param != null ?
                         param.getType().getCanonicalText() : "Exception";
                     int catchLine = getLineNumber(catchSection);
 
+                    // Check if multi-catch (IOException | SQLException) by text
+                    String catchText = catchSection.getText();
+                    if (catchText.contains("|")) {
+                        cfgNodes.add(new CFGNode(
+                            CFGNode.NodeType.MULTI_CATCH,
+                            "multi-catch: " + exceptionType,
+                            catchLine,
+                            null,
+                            null,
+                            new CFGNode.CatchInfo(exceptionType, catchLine)
+                        ));
+                        LOG.debug("Found multi-catch at line {}: {}", catchLine, exceptionType);
+                    } else {
+                        cfgNodes.add(new CFGNode(
+                            CFGNode.NodeType.CATCH,
+                            null,
+                            line,
+                            null,
+                            null,
+                            new CFGNode.CatchInfo(exceptionType, catchLine)
+                        ));
+                    }
+                }
+            }
+
+            @Override
+            public void visitSynchronizedStatement(@NotNull PsiSynchronizedStatement statement) {
+                super.visitSynchronizedStatement(statement);
+                
+                int line = getLineNumber(statement);
+                String syncText = statement.getText();
+
+                cfgNodes.add(new CFGNode(
+                    CFGNode.NodeType.SYNCHRONIZED,
+                    "synchronized: " + (syncText.length() > 50 ? syncText.substring(0, 50) + "..." : syncText),
+                    line,
+                    null,
+                    null,
+                    null
+                ));
+                
+                LOG.debug("Found synchronized block at line {}", line);
+            }
+
+            @Override
+            public void visitMethodReferenceExpression(@NotNull PsiMethodReferenceExpression expression) {
+                super.visitMethodReferenceExpression(expression);
+                
+                // Method reference: ClassName::methodName or instance::methodName
+                int line = getLineNumber(expression);
+                String refText = expression.getText();
+                
+                cfgNodes.add(new CFGNode(
+                    CFGNode.NodeType.METHOD_REF,
+                    "method ref: " + refText,
+                    line,
+                    null,
+                    null,
+                    null
+                ));
+                
+                LOG.debug("Found method reference at line {}: {}", line, refText);
+            }
+
+            @Override
+            public void visitNewExpression(@NotNull PsiNewExpression expression) {
+                super.visitNewExpression(expression);
+                
+                // Anonymous class: new Interface() { ... }
+                PsiClass anonymousClass = expression.getAnonymousClass();
+                if (anonymousClass != null) {
+                    int line = getLineNumber(expression);
+                    String className = anonymousClass.getName() != null ? 
+                        anonymousClass.getName() : "anonymous";
+                    
                     cfgNodes.add(new CFGNode(
-                        CFGNode.NodeType.CATCH,
-                        null,
+                        CFGNode.NodeType.ANONYMOUS_CLASS,
+                        "anonymous class: new " + className + "() {...}",
                         line,
                         null,
                         null,
-                        new CFGNode.CatchInfo(exceptionType, catchLine)
+                        null
                     ));
+                    
+                    // Recursively extract branches from anonymous class body
+                    extractBranchesFromElement(anonymousClass, cfgNodes);
+                    
+                    LOG.debug("Found anonymous class at line {}", line);
                 }
             }
 
@@ -592,7 +692,7 @@ public class PSIExtractor {
                     statement.getExpression().getText() : "unknown";
                 int line = getLineNumber(statement);
                 PsiCodeBlock block = statement.getBody();
-                
+
                 if (block != null) {
                     // Extract individual case branches
                     PsiStatement[] statements = block.getStatements();
@@ -602,15 +702,29 @@ public class PSIExtractor {
                             // Get case value from label text
                             String caseValue = label.getText().replace("case", "").replace("default", "default").trim();
                             if (caseValue.isEmpty()) caseValue = "default";
-                            
-                            cfgNodes.add(new CFGNode(
-                                CFGNode.NodeType.SWITCH,
-                                condition + " -> case " + caseValue,
-                                getLineNumber(label),
-                                null,
-                                null,
-                                null
-                            ));
+
+                            // Check for guarded pattern (Java 21+)
+                            // Example: case Point(int x, int y) when x > 0 -> ...
+                            if (caseValue.contains(" when ")) {
+                                cfgNodes.add(new CFGNode(
+                                    CFGNode.NodeType.GUARDED_PATTERN,
+                                    condition + " -> " + caseValue,
+                                    getLineNumber(label),
+                                    null,
+                                    null,
+                                    null
+                                ));
+                                LOG.debug("Found guarded pattern at line {}: {}", getLineNumber(label), caseValue);
+                            } else {
+                                cfgNodes.add(new CFGNode(
+                                    CFGNode.NodeType.SWITCH,
+                                    condition + " -> case " + caseValue,
+                                    getLineNumber(label),
+                                    null,
+                                    null,
+                                    null
+                                ));
+                            }
                         }
                     }
                 } else {
@@ -633,7 +747,7 @@ public class PSIExtractor {
                 String condition = expression.getCondition() != null ?
                     expression.getCondition().getText() : "unknown";
                 int line = getLineNumber(expression);
-                
+
                 cfgNodes.add(new CFGNode(
                     CFGNode.NodeType.IF, // Ternary is essentially an if-else
                     "ternary: " + condition + " ? ... : ...",
@@ -642,6 +756,111 @@ public class PSIExtractor {
                     null, // false branch inline
                     null
                 ));
+            }
+
+            @Override
+            public void visitInstanceOfExpression(@NotNull PsiInstanceOfExpression expression) {
+                super.visitInstanceOfExpression(expression);
+                
+                // Pattern matching instanceof (Java 16+)
+                // Example: if (obj instanceof String s) { ... }
+                PsiPattern pattern = expression.getPattern();
+                if (pattern != null) {
+                    String patternText = pattern.getText();
+                    String condition = "instanceof " + patternText;
+                    int line = getLineNumber(expression);
+
+                    // Check for record pattern (Java 21+)
+                    // Example: if (obj instanceof Point(int x, int y))
+                    // Using string check since PsiRecordPattern may not be available in all IDEA versions
+                    if (patternText.contains("(") && patternText.contains(")")) {
+                        cfgNodes.add(new CFGNode(
+                            CFGNode.NodeType.RECORD_PATTERN,
+                            "record pattern: " + patternText,
+                            line,
+                            null,
+                            null,
+                            null
+                        ));
+                        LOG.debug("Found record pattern instanceof at line {}: {}", line, patternText);
+                    } else {
+                        cfgNodes.add(new CFGNode(
+                            CFGNode.NodeType.PATTERN_MATCHING,
+                            condition,
+                            line,
+                            null,
+                            null,
+                            null
+                        ));
+                        LOG.debug("Found pattern matching instanceof at line {}: {}", line, patternText);
+                    }
+                }
+            }
+
+            @Override
+            public void visitAssertStatement(@NotNull PsiAssertStatement statement) {
+                super.visitAssertStatement(statement);
+                
+                String condition = statement.getAssertCondition().getText();
+                int line = getLineNumber(statement);
+
+                cfgNodes.add(new CFGNode(
+                    CFGNode.NodeType.ASSERT,
+                    "assert: " + condition,
+                    line,
+                    null,
+                    null,
+                    null
+                ));
+                
+                LOG.debug("Found assert statement at line {}: {}", line, condition);
+            }
+
+            @Override
+            public void visitLambdaExpression(@NotNull PsiLambdaExpression expression) {
+                super.visitLambdaExpression(expression);
+                
+                // Extract branches from lambda body
+                PsiElement body = expression.getBody();
+                if (body != null) {
+                    int line = getLineNumber(expression);
+                    String lambdaParams = expression.getParameterList() != null ? 
+                        expression.getParameterList().getText() : "";
+                    
+                    cfgNodes.add(new CFGNode(
+                        CFGNode.NodeType.LAMBDA,
+                        "lambda: (" + lambdaParams + ") -> {...}",
+                        line,
+                        null,
+                        null,
+                        null
+                    ));
+                    
+                    // Recursively extract branches from lambda body
+                    extractBranchesFromElement(body, cfgNodes);
+                    
+                    LOG.debug("Found lambda expression at line {} with params: {}", line, lambdaParams);
+                }
+            }
+
+            @Override
+            public void visitYieldStatement(@NotNull PsiYieldStatement statement) {
+                super.visitYieldStatement(statement);
+                
+                PsiExpression valueExpr = statement.getExpression();
+                String value = valueExpr != null ? valueExpr.getText() : "unknown";
+                int line = getLineNumber(statement);
+
+                cfgNodes.add(new CFGNode(
+                    CFGNode.NodeType.YIELD,
+                    "yield: " + value,
+                    line,
+                    null,
+                    null,
+                    null
+                ));
+                
+                LOG.debug("Found yield statement at line {}: {}", line, value);
             }
 
             @Override
@@ -713,10 +932,141 @@ public class PSIExtractor {
                 super.visitMethodCallExpression(expression);
                 // Detect stream().forEach() and similar patterns
                 String methodText = expression.getMethodExpression().getText();
-                if (methodText.contains(".forEach") || methodText.contains(".stream")) {
+                
+                // Enhanced stream/optional detection
+                if (methodText.contains(".filter") || methodText.contains(".peek")) {
                     String fullText = expression.getText();
                     int line = getLineNumber(expression);
+
+                    // Check for reactive streams (Mono/Flux)
+                    PsiType type = expression.getType();
+                    String typeName = type != null ? type.getCanonicalText() : "";
                     
+                    if (typeName.contains("Mono") || typeName.contains("Flux") || 
+                        typeName.contains("reactor") || typeName.contains("rxjava")) {
+                        cfgNodes.add(new CFGNode(
+                            CFGNode.NodeType.REACTIVE_FILTER,
+                            "reactive.filter: " + (fullText.length() > 80 ? fullText.substring(0, 80) + "..." : fullText),
+                            line,
+                            null,
+                            null,
+                            null
+                        ));
+                        LOG.debug("Found reactive filter at line {}", line);
+                    } else {
+                        cfgNodes.add(new CFGNode(
+                            CFGNode.NodeType.STREAM_FILTER,
+                            "stream.filter: " + (fullText.length() > 80 ? fullText.substring(0, 80) + "..." : fullText),
+                            line,
+                            null,
+                            null,
+                            null
+                        ));
+                        LOG.debug("Found stream filter at line {}", line);
+                    }
+                }
+                
+                if (methodText.contains(".map")) {
+                    String fullText = expression.getText();
+                    int line = getLineNumber(expression);
+
+                    PsiType type = expression.getType();
+                    String typeName = type != null ? type.getCanonicalText() : "";
+                    
+                    if (typeName.contains("Mono") || typeName.contains("Flux") ||
+                        typeName.contains("reactor") || typeName.contains("rxjava")) {
+                        cfgNodes.add(new CFGNode(
+                            CFGNode.NodeType.REACTIVE_MAP,
+                            "reactive.map: " + (fullText.length() > 80 ? fullText.substring(0, 80) + "..." : fullText),
+                            line,
+                            null,
+                            null,
+                            null
+                        ));
+                        LOG.debug("Found reactive map at line {}", line);
+                    } else {
+                        cfgNodes.add(new CFGNode(
+                            CFGNode.NodeType.STREAM_MAP,
+                            "stream.map: " + (fullText.length() > 80 ? fullText.substring(0, 80) + "..." : fullText),
+                            line,
+                            null,
+                            null,
+                            null
+                        ));
+                        LOG.debug("Found stream map at line {}", line);
+                    }
+                }
+                
+                if (methodText.contains(".forEach")) {
+                    String fullText = expression.getText();
+                    int line = getLineNumber(expression);
+
+                    cfgNodes.add(new CFGNode(
+                        CFGNode.NodeType.STREAM_FOREACH,
+                        "stream.forEach: " + (fullText.length() > 80 ? fullText.substring(0, 80) + "..." : fullText),
+                        line,
+                        null,
+                        null,
+                        null
+                    ));
+                    LOG.debug("Found stream forEach at line {}", line);
+                }
+                
+                // Reactive error handling
+                if (methodText.contains(".onError")) {
+                    String fullText = expression.getText();
+                    int line = getLineNumber(expression);
+
+                    cfgNodes.add(new CFGNode(
+                        CFGNode.NodeType.REACTIVE_ON_ERROR,
+                        "reactive.onError: " + (fullText.length() > 80 ? fullText.substring(0, 80) + "..." : fullText),
+                        line,
+                        null,
+                        null,
+                        null
+                    ));
+                    LOG.debug("Found reactive error handler at line {}", line);
+                }
+                
+                // Optional methods
+                if (methodText.contains(".ifPresent")) {
+                    int line = getLineNumber(expression);
+                    
+                    if (methodText.contains(".ifPresentOrElse")) {
+                        cfgNodes.add(new CFGNode(
+                            CFGNode.NodeType.OPTIONAL_IF_PRESENT,
+                            "optional.ifPresentOrElse(present)",
+                            line,
+                            null,
+                            null,
+                            null
+                        ));
+                        cfgNodes.add(new CFGNode(
+                            CFGNode.NodeType.OPTIONAL_IF_EMPTY,
+                            "optional.ifPresentOrElse(empty)",
+                            line,
+                            null,
+                            null,
+                            null
+                        ));
+                        LOG.debug("Found optional.ifPresentOrElse at line {}", line);
+                    } else {
+                        cfgNodes.add(new CFGNode(
+                            CFGNode.NodeType.OPTIONAL_IF_PRESENT,
+                            "optional.ifPresent",
+                            line,
+                            null,
+                            null,
+                            null
+                        ));
+                        LOG.debug("Found optional.ifPresent at line {}", line);
+                    }
+                }
+                
+                if (methodText.contains(".stream")) {
+                    String fullText = expression.getText();
+                    int line = getLineNumber(expression);
+
                     cfgNodes.add(new CFGNode(
                         CFGNode.NodeType.LOOP,
                         "stream/forEach: " + (fullText.length() > 100 ? fullText.substring(0, 100) + "..." : fullText),
@@ -1250,5 +1600,100 @@ public class PSIExtractor {
      */
     private int getLineNumber(@NotNull PsiElement element) {
         return element.getTextRange().getStartOffset();
+    }
+
+    /**
+     * Recursively extract branches from a PSI element (e.g., lambda body)
+     * Used for nested branch extraction
+     */
+    private void extractBranchesFromElement(@NotNull PsiElement element, 
+                                             @NotNull List<CFGNode> cfgNodes) {
+        element.accept(new JavaRecursiveElementVisitor() {
+            @Override
+            public void visitIfStatement(@NotNull PsiIfStatement statement) {
+                super.visitIfStatement(statement);
+                String condition = statement.getCondition() != null ?
+                    statement.getCondition().getText() : "unknown";
+                int line = getLineNumber(statement);
+
+                cfgNodes.add(new CFGNode(
+                    CFGNode.NodeType.IF,
+                    "[lambda] if (" + condition + ")",
+                    line,
+                    null,
+                    null,
+                    null
+                ));
+            }
+
+            @Override
+            public void visitConditionalExpression(@NotNull PsiConditionalExpression expression) {
+                super.visitConditionalExpression(expression);
+                String condition = expression.getCondition() != null ?
+                    expression.getCondition().getText() : "unknown";
+                int line = getLineNumber(expression);
+
+                cfgNodes.add(new CFGNode(
+                    CFGNode.NodeType.IF,
+                    "[lambda] ternary: " + condition,
+                    line,
+                    null,
+                    null,
+                    null
+                ));
+            }
+
+            @Override
+            public void visitSwitchStatement(@NotNull PsiSwitchStatement statement) {
+                super.visitSwitchStatement(statement);
+                String condition = statement.getExpression() != null ?
+                    statement.getExpression().getText() : "unknown";
+                int line = getLineNumber(statement);
+
+                cfgNodes.add(new CFGNode(
+                    CFGNode.NodeType.SWITCH,
+                    "[lambda] switch (" + condition + ")",
+                    line,
+                    null,
+                    null,
+                    null
+                ));
+            }
+
+            @Override
+            public void visitInstanceOfExpression(@NotNull PsiInstanceOfExpression expression) {
+                super.visitInstanceOfExpression(expression);
+                PsiPattern pattern = expression.getPattern();
+                if (pattern != null) {
+                    String patternText = pattern.getText();
+                    int line = getLineNumber(expression);
+
+                    cfgNodes.add(new CFGNode(
+                        CFGNode.NodeType.PATTERN_MATCHING,
+                        "[lambda] instanceof " + patternText,
+                        line,
+                        null,
+                        null,
+                        null
+                    ));
+                }
+            }
+
+            @Override
+            public void visitAssertStatement(@NotNull PsiAssertStatement statement) {
+                super.visitAssertStatement(statement);
+                String condition = statement.getAssertCondition().getText();
+                int line = getLineNumber(statement);
+
+                cfgNodes.add(new CFGNode(
+                    CFGNode.NodeType.ASSERT,
+                    "[lambda] assert: " + condition,
+                    line,
+                    null,
+                    null,
+                    null
+                ));
+            }
+        });
     }
 }

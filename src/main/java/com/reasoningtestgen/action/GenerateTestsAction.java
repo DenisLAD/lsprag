@@ -174,12 +174,13 @@ public class GenerateTestsAction extends AnAction {
                     indicator.setText("Opening preview dialog...");
                     indicator.setFraction(1.0);
                     
-                    // Step 4: Show preview dialog (non-blocking)
+                    // Step 4: Show reasoning pipeline dialog (non-blocking)
                     ApplicationManager.getApplication().invokeLater(() -> {
-                        TestGenerationPreviewDialog dialog = new TestGenerationPreviewDialog(
+                        ReasoningPipelineDialog dialog = new ReasoningPipelineDialog(
                             project,
                             context.className(),
                             context.methodName(),
+                            context,
                             finalFullPrompt
                         );
                         dialog.show();
